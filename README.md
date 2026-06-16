@@ -80,7 +80,7 @@ The paper-grade run path is documented in
 ```bash
 python scripts/build_manifest.py --dataset iuxray --data-root <IU_ROOT> --output <OUT>/iuxray_manifest.jsonl
 python scripts/build_radiology_primekg.py --primekg-dir <FULL_PRIMEKG_DIR> --manifest <OUT>/iuxray_manifest.jsonl --output-dir <PRIMEKG_RAD_CACHE> --hops 1
-python scripts/run_primekg_reasoning.py --manifest <OUT>/iuxray_manifest.jsonl --primekg-dir <PRIMEKG_RAD_CACHE> --output-dir <OUT> --dataset-name iuxray --split test --limit 50 --latency-repeats 1
+python scripts/run_primekg_reasoning.py --manifest <OUT>/iuxray_manifest.jsonl --primekg-dir <PRIMEKG_RAD_CACHE> --output-dir <OUT> --dataset-name iuxray --split test --limit 50 --subgraph-strategy ego --latency-repeats 1
 python scripts/run_sensitivity_from_reasoning.py --reasoning-json <OUT>/iuxray_test_n50_reasoning.json --output-csv <OUT>/iuxray_test_n50_sensitivity.csv
 ```
 

@@ -32,6 +32,8 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
+    parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="steiner")
+    parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--latency-repeats", type=int, default=1)
     parser.add_argument("--skip-latency", action="store_true")
     args = parser.parse_args()
@@ -65,6 +67,8 @@ def main() -> None:
         subgraph_builder=TemporalSubgraphBuilder(
             kg,
             max_path_expansions=args.max_path_expansions,
+            strategy=args.subgraph_strategy,
+            max_neighbors_per_node=args.max_neighbors_per_node,
         ),
         auditor=NeuroSymbolicAuditor(beta_accept=0.65, gamma_flag=0.50),
         gate=ConsistencyGate(min_grounding=0.30, max_hallucination=0.50, min_entailment=0.50),

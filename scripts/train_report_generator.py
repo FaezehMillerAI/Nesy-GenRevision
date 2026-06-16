@@ -116,8 +116,13 @@ def main() -> None:
             for step, batch in enumerate(tqdm(train_loader, desc=f"train epoch {epoch}"), start=1):
                 pixel_values = batch["pixel_values"].to(device)
                 labels = batch["labels"].to(device)
+                decoder_attention_mask = batch["decoder_attention_mask"].to(device)
                 with torch.cuda.amp.autocast(enabled=args.fp16 and device.type == "cuda"):
-                    output = model(pixel_values=pixel_values, labels=labels)
+                    output = model(
+                        pixel_values=pixel_values,
+                        labels=labels,
+                        decoder_attention_mask=decoder_attention_mask,
+                    )
                     loss = output.loss / args.gradient_accumulation_steps
                 scaler.scale(loss).backward()
                 if step % args.gradient_accumulation_steps == 0:
@@ -159,6 +164,7 @@ def evaluate_loss(model, val_loader, device, torch) -> float:
             output = model(
                 pixel_values=batch["pixel_values"].to(device),
                 labels=batch["labels"].to(device),
+                decoder_attention_mask=batch["decoder_attention_mask"].to(device),
             )
             losses.append(float(output.loss.detach().cpu()))
     model.train()
@@ -167,4 +173,3 @@ def evaluate_loss(model, val_loader, device, torch) -> float:
 
 if __name__ == "__main__":
     main()
-

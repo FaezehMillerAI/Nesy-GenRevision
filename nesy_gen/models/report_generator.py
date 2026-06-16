@@ -65,9 +65,12 @@ def build_processor_tokenizer_model(config: GeneratorConfig):
     model.config.decoder_start_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
     model.config.eos_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
-    model.config.max_length = config.max_target_length
-    model.config.no_repeat_ngram_size = 3
-    model.config.early_stopping = True
+    model.generation_config.max_length = config.max_target_length
+    model.generation_config.no_repeat_ngram_size = 3
+    model.generation_config.early_stopping = True
+    model.generation_config.decoder_start_token_id = model.config.decoder_start_token_id
+    model.generation_config.eos_token_id = model.config.eos_token_id
+    model.generation_config.pad_token_id = model.config.pad_token_id
     return image_processor, tokenizer, model
 
 
@@ -114,6 +117,7 @@ class ReportGenerationDataset:
             labels = tokens.input_ids.squeeze(0)
             labels[labels == self.tokenizer.pad_token_id] = -100
             item["labels"] = labels
+            item["decoder_attention_mask"] = tokens.attention_mask.squeeze(0)
         return item
 
 
@@ -126,6 +130,9 @@ def collate_generation_batch(batch: list[dict[str, object]]) -> dict[str, object
     }
     if "labels" in batch[0]:
         result["labels"] = torch.stack([item["labels"] for item in batch])
+        result["decoder_attention_mask"] = torch.stack(
+            [item["decoder_attention_mask"] for item in batch]
+        )
     return result
 
 

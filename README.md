@@ -82,6 +82,9 @@ python scripts/build_manifest.py --dataset iuxray --data-root <IU_ROOT> --output
 python scripts/build_radiology_primekg.py --primekg-dir <FULL_PRIMEKG_DIR> --manifest <OUT>/iuxray_manifest.jsonl --output-dir <PRIMEKG_RAD_CACHE> --hops 1
 python scripts/run_primekg_reasoning.py --manifest <OUT>/iuxray_manifest.jsonl --primekg-dir <PRIMEKG_RAD_CACHE> --output-dir <OUT> --dataset-name iuxray --split test --limit 50 --subgraph-strategy ego --latency-repeats 1
 python scripts/run_sensitivity_from_reasoning.py --reasoning-json <OUT>/iuxray_test_n50_reasoning.json --output-csv <OUT>/iuxray_test_n50_sensitivity.csv
+python scripts/train_report_generator.py --manifest <OUT>/iuxray_manifest.jsonl --output-dir <OUT>/checkpoints/swin_tiny_distilgpt2_smoke --epochs 1 --max-train-examples 128 --max-val-examples 32
+python scripts/generate_reports.py --manifest <OUT>/iuxray_manifest.jsonl --checkpoint-dir <OUT>/checkpoints/swin_tiny_distilgpt2_smoke --output-csv <OUT>/iuxray_generated_test_smoke.csv --split test --limit 100
+python scripts/evaluate_generation.py --manifest <OUT>/iuxray_manifest.jsonl --predictions-csv <OUT>/iuxray_generated_test_smoke.csv --nodes-csv <PRIMEKG_RAD_CACHE>/nodes.csv --output-json <OUT>/iuxray_generated_test_smoke_metrics.json
 ```
 
 ## Data Expectations

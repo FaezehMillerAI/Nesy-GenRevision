@@ -5,6 +5,7 @@ from nesy_gen.evaluation.analysis import (
     write_analysis_bundle,
 )
 from nesy_gen.evaluation.factuality import ReportPair, evaluate_report_pairs
+from nesy_gen.evaluation.generation_metrics import corpus_generation_metrics
 from nesy_gen.evaluation.metrics import entity_f1, hallucination_rate
 from nesy_gen.evaluation.profiling import measure_latency, parameter_count
 from nesy_gen.evaluation.reasoning import (
@@ -20,6 +21,7 @@ __all__ = [
     "entity_f1",
     "entity_frequency_frame",
     "evaluate_report_pairs",
+    "corpus_generation_metrics",
     "hallucination_rate",
     "low_score_frame",
     "measure_latency",

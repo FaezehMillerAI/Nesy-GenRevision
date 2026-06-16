@@ -93,6 +93,33 @@ python scripts/evaluate_factuality.py \
   --output-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_factuality_test.csv
 ```
 
+Train, generate, and evaluate a neural image-to-report model on IU X-ray:
+
+```bash
+python scripts/train_report_generator.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/checkpoints/swin_tiny_distilgpt2_smoke \
+  --epochs 1 \
+  --batch-size 2 \
+  --max-train-examples 128 \
+  --max-val-examples 32 \
+  --fp16
+
+python scripts/generate_reports.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --checkpoint-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/checkpoints/swin_tiny_distilgpt2_smoke \
+  --output-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke.csv \
+  --split test \
+  --limit 100
+
+python scripts/evaluate_generation.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --predictions-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke.csv \
+  --nodes-csv /content/drive/MyDrive/primekg_radiology_cache_iuxray/nodes.csv \
+  --output-json /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_metrics.json \
+  --output-factuality-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_factuality.csv
+```
+
 ## 6. Reviewer-Facing Outputs
 
 The reasoning script saves:

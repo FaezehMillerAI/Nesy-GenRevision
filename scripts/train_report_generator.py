@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--encoder-model", default="microsoft/swin-tiny-patch4-window7-224")
     parser.add_argument("--decoder-model", default="distilgpt2")
+    parser.add_argument("--pretrained-vision-encoder-decoder-model")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -35,6 +36,7 @@ def main() -> None:
     parser.add_argument("--max-val-examples", type=int)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument("--freeze-encoder", action="store_true")
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--seed", type=int, default=13)
     args = parser.parse_args()
@@ -61,10 +63,14 @@ def main() -> None:
     config = GeneratorConfig(
         encoder_model=args.encoder_model,
         decoder_model=args.decoder_model,
+        pretrained_vision_encoder_decoder_model=args.pretrained_vision_encoder_decoder_model,
         max_target_length=args.max_target_length,
     )
     save_generator_config(out / "generator_config.json", config)
     image_processor, tokenizer, model = build_processor_tokenizer_model(config)
+    if args.freeze_encoder:
+        for param in model.encoder.parameters():
+            param.requires_grad = False
 
     train_dataset = ReportGenerationDataset(
         train_examples,
@@ -148,6 +154,8 @@ def main() -> None:
                 "device": str(device),
                 "history": str(history_path),
                 "checkpoint": str(out),
+                "pretrained_vision_encoder_decoder_model": args.pretrained_vision_encoder_decoder_model,
+                "freeze_encoder": args.freeze_encoder,
             },
             indent=2,
         ),

@@ -11,6 +11,7 @@ from nesy_gen.data.schema import RadiologyExample
 class GeneratorConfig:
     encoder_model: str = "microsoft/swin-tiny-patch4-window7-224"
     decoder_model: str = "distilgpt2"
+    pretrained_vision_encoder_decoder_model: str | None = None
     max_target_length: int = 160
     image_size: int = 224
 
@@ -48,20 +49,32 @@ def require_torch_transformers():
 def build_processor_tokenizer_model(config: GeneratorConfig):
     deps = require_torch_transformers()
     tokenizer = deps["AutoTokenizer"].from_pretrained(config.decoder_model)
+    if config.pretrained_vision_encoder_decoder_model:
+        tokenizer = deps["AutoTokenizer"].from_pretrained(
+            config.pretrained_vision_encoder_decoder_model
+        )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    image_processor = deps["AutoImageProcessor"].from_pretrained(config.encoder_model)
-    decoder_config = deps["AutoConfig"].from_pretrained(config.decoder_model)
-    decoder_config.is_decoder = True
-    decoder_config.add_cross_attention = True
-    decoder_config.pad_token_id = tokenizer.pad_token_id
-    decoder_config.bos_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
-    decoder_config.eos_token_id = tokenizer.eos_token_id
-    model = deps["VisionEncoderDecoderModel"].from_encoder_decoder_pretrained(
-        config.encoder_model,
-        config.decoder_model,
-        decoder_config=decoder_config,
-    )
+    if config.pretrained_vision_encoder_decoder_model:
+        image_processor = deps["AutoImageProcessor"].from_pretrained(
+            config.pretrained_vision_encoder_decoder_model
+        )
+        model = deps["VisionEncoderDecoderModel"].from_pretrained(
+            config.pretrained_vision_encoder_decoder_model
+        )
+    else:
+        image_processor = deps["AutoImageProcessor"].from_pretrained(config.encoder_model)
+        decoder_config = deps["AutoConfig"].from_pretrained(config.decoder_model)
+        decoder_config.is_decoder = True
+        decoder_config.add_cross_attention = True
+        decoder_config.pad_token_id = tokenizer.pad_token_id
+        decoder_config.bos_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
+        decoder_config.eos_token_id = tokenizer.eos_token_id
+        model = deps["VisionEncoderDecoderModel"].from_encoder_decoder_pretrained(
+            config.encoder_model,
+            config.decoder_model,
+            decoder_config=decoder_config,
+        )
     model.config.decoder_start_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
     model.config.eos_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = tokenizer.pad_token_id

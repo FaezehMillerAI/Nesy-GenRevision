@@ -120,6 +120,32 @@ python scripts/evaluate_generation.py \
   --output-factuality-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_factuality.csv
 ```
 
+For a stronger neural starting point, use an existing image-captioning
+VisionEncoderDecoder checkpoint and fine-tune it on IU X-ray:
+
+```bash
+python scripts/train_report_generator.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/checkpoints/vit_gpt2_captioning_iuxray \
+  --pretrained-vision-encoder-decoder-model nlpconnect/vit-gpt2-image-captioning \
+  --epochs 3 \
+  --batch-size 4 \
+  --gradient-accumulation-steps 2 \
+  --max-target-length 160 \
+  --fp16
+```
+
+Compare generated, retrieval, and other systems:
+
+```bash
+python scripts/compare_generation_systems.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --nodes-csv /content/drive/MyDrive/primekg_radiology_cache_iuxray/nodes.csv \
+  --output-json /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generation_system_comparison.json \
+  --system neural /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke.csv \
+  --system retrieval /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv
+```
+
 Build qualitative HTML and figures:
 
 ```bash

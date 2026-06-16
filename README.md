@@ -31,6 +31,16 @@ For PrimeKG, either download the CSV manually or run:
 python scripts/download_primekg.py --out data/primekg/kg.csv
 ```
 
+If you already downloaded the Harvard Dataverse bundle, place it under
+`dataverse_files/` and run:
+
+```bash
+python scripts/inspect_primekg.py --dataverse-dir dataverse_files
+```
+
+The loader prefers `dataverse_files/kg.csv` and can fall back to reconstructing
+the graph from `edges.csv` plus `nodes.csv`.
+
 PrimeKG is published by the Harvard/MIMS project. Their repository describes the
 ready-to-use CSV download and dataloaders: https://github.com/mims-harvard/PrimeKG
 
@@ -72,4 +82,3 @@ Use JSONL manifests for experiments:
 
 The loaders intentionally do not redistribute IU X-ray, MIMIC-CXR, or MIMIC
 metadata. Place local manifests under `data/` after obtaining dataset access.
-

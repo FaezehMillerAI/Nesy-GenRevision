@@ -11,6 +11,7 @@ venv/
 env/
 
 /data/
+/dataverse_files/
 artifacts/
 checkpoints/
 runs/

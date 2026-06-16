@@ -66,7 +66,34 @@ python scripts/run_sensitivity_from_reasoning.py \
   --trials 100
 ```
 
-## 5. Reviewer-Facing Outputs
+## 5. IU X-ray Analysis, Baseline, And Factuality
+
+Create reviewer-facing analysis tables:
+
+```bash
+python scripts/analyze_reasoning_outputs.py \
+  --reasoning-json /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_reasoning.json \
+  --scores-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_scores.csv \
+  --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1 \
+  --prefix iuxray_test
+```
+
+Run a TF-IDF retrieval baseline and entity-level factuality/hallucination proxy:
+
+```bash
+python scripts/run_retrieval_baseline.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --output-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv \
+  --split test
+
+python scripts/evaluate_factuality.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --predictions-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv \
+  --nodes-csv /content/drive/MyDrive/primekg_radiology_cache_iuxray/nodes.csv \
+  --output-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_factuality_test.csv
+```
+
+## 6. Reviewer-Facing Outputs
 
 The reasoning script saves:
 
@@ -83,7 +110,7 @@ These outputs directly support:
 - computational latency reporting;
 - perturbation sensitivity/error propagation.
 
-## 6. MIMIC-CXR
+## 7. MIMIC-CXR
 
 For the Kaggle mirror with `mimic_cxr_aug_train.csv`,
 `mimic_cxr_aug_validate.csv`, and `official_data_iccv_final/files`, build a

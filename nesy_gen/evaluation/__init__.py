@@ -16,6 +16,7 @@ from nesy_gen.evaluation.reasoning import (
     save_reasoning_artifacts,
 )
 from nesy_gen.evaluation.sensitivity import run_linking_sensitivity
+from nesy_gen.evaluation.visualization import build_qualitative_html, save_standard_plots
 
 __all__ = [
     "entity_f1",
@@ -30,9 +31,11 @@ __all__ = [
     "reasoning_coverage_frame",
     "reasoning_score_frame",
     "ReportPair",
+    "build_qualitative_html",
     "run_linking_sensitivity",
     "run_reasoning_batch",
     "save_reasoning_artifacts",
+    "save_standard_plots",
     "score_bin_frame",
     "write_analysis_bundle",
 ]

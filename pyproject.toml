@@ -31,6 +31,7 @@ nlp = [
 eval = [
   "nltk>=3.8",
   "rouge-score>=0.1.2",
+  "matplotlib>=3.7",
 ]
 colab = [
   "kagglehub>=0.2.8",

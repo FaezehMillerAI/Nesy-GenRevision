@@ -120,6 +120,28 @@ python scripts/evaluate_generation.py \
   --output-factuality-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_factuality.csv
 ```
 
+Build qualitative HTML and figures:
+
+```bash
+python scripts/build_qualitative_report.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --predictions-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke.csv \
+  --graph-scores-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_scores.csv \
+  --retrieval-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv \
+  --factuality-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_factuality.csv \
+  --output-html /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_qualitative.html \
+  --run-name iuxray_generated_test_smoke \
+  --max-examples 25
+
+python scripts/plot_results.py \
+  --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/figures \
+  --run-name iuxray_generated_test_smoke \
+  --graph-scores-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_scores.csv \
+  --factuality-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_generated_test_smoke_factuality.csv \
+  --sensitivity-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_sensitivity.csv \
+  --entities-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_test_positive_entity_frequencies.csv
+```
+
 ## 6. Reviewer-Facing Outputs
 
 The reasoning script saves:

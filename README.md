@@ -72,6 +72,17 @@ validation. This repo therefore includes first-class hooks for:
 - latency and parameter-count profiling;
 - GraphRAG-style retrieval baselines using the same PrimeKG interface.
 
+## End-to-End Experiment Scripts
+
+The paper-grade run path is documented in
+`docs/end_to_end_experiment.md`. The main commands are:
+
+```bash
+python scripts/build_manifest.py --dataset iuxray --data-root <IU_ROOT> --output <OUT>/iuxray_manifest.jsonl
+python scripts/run_primekg_reasoning.py --manifest <OUT>/iuxray_manifest.jsonl --primekg-dir <PRIMEKG_DIR> --output-dir <OUT> --dataset-name iuxray --split test --limit 50
+python scripts/run_sensitivity_from_reasoning.py --reasoning-json <OUT>/iuxray_test_n50_reasoning.json --output-csv <OUT>/iuxray_test_n50_sensitivity.csv
+```
+
 ## Data Expectations
 
 Use JSONL manifests for experiments:

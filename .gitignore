@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.DS_Store
+
+.venv/
+venv/
+env/
+
+data/
+artifacts/
+checkpoints/
+runs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+
+# Local manuscript/review artifacts; keep these out of public GitHub commits.
+Main Manuscript.pdf
+Reviewer's Comments.docx

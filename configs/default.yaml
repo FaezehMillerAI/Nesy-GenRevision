@@ -1,0 +1,29 @@
+seed: 13
+
+primekg:
+  csv_path: data/primekg/kg.csv
+  relation_weights:
+    causes: 1.0
+    located_in: 0.7
+    associated_with: 0.5
+    default: 0.3
+  temporal_alpha: 0.6
+
+gate:
+  beta_accept: 0.65
+  gamma_flag: 0.50
+  min_grounding: 0.30
+  max_hallucination: 0.50
+  min_entailment: 0.50
+
+logic:
+  clause_weights:
+    bio_temporal: 1.2
+    finding_to_diagnosis: 1.0
+    located_in_type: 1.2
+
+evaluation:
+  perturbation_trials: 100
+  entity_drop_rates: [0.0, 0.1, 0.2, 0.3, 0.5]
+  entity_swap_rates: [0.0, 0.1, 0.2]
+

@@ -21,6 +21,7 @@ class TemporalSubgraphBuilder:
     primekg: PrimeKGGraph
     temporal_alpha: float = 0.6
     relation_weights: Mapping[str, float] | None = None
+    max_path_expansions: int | None = 200_000
 
     def __post_init__(self) -> None:
         if self.relation_weights is None:
@@ -32,24 +33,31 @@ class TemporalSubgraphBuilder:
         if len(terminals) <= 1:
             return self.primekg.graph.subgraph(terminals).copy()
 
-        weighted = self.primekg.graph.copy()
-        for source, target, attrs in weighted.edges(data=True):
-            attrs["weight"] = self.edge_weight(attrs)
-            weighted.add_edge(source, target, **attrs)
-
         sub_nodes: set[str] = set(terminals)
         root = terminals[0]
         for terminal in terminals[1:]:
             try:
-                path = weighted.shortest_path(root, terminal, weight="weight")
+                path = self.primekg.graph.shortest_path(
+                    root,
+                    terminal,
+                    weight=self.edge_weight,
+                    directed=True,
+                    max_expansions=self.max_path_expansions,
+                )
             except ValueError:
                 try:
-                    path = weighted.to_undirected().shortest_path(root, terminal, weight="weight")
+                    path = self.primekg.graph.shortest_path(
+                        root,
+                        terminal,
+                        weight=self.edge_weight,
+                        directed=False,
+                        max_expansions=self.max_path_expansions,
+                    )
                 except ValueError:
                     continue
             sub_nodes.update(str(node) for node in path)
 
-        return weighted.subgraph(sub_nodes).copy()
+        return self.primekg.graph.subgraph(sub_nodes)
 
     def edge_weight(self, attrs: Mapping[str, object]) -> float:
         relation = str(attrs.get("display_relation") or attrs.get("relation") or "default").lower()

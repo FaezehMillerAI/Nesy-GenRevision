@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import heapq
-from typing import Iterable
+from typing import Callable, Iterable
 
 
 class NodeAccessor:
@@ -29,6 +29,7 @@ class SimpleDiGraph:
     def __init__(self) -> None:
         self._nodes: dict[str, dict] = {}
         self._adj: dict[str, dict[str, dict]] = {}
+        self._radj: dict[str, dict[str, dict]] = {}
         self.nodes = NodeAccessor(self)
 
     def __contains__(self, node: str) -> bool:
@@ -38,13 +39,16 @@ class SimpleDiGraph:
         node = str(node)
         self._nodes.setdefault(node, {}).update(attrs)
         self._adj.setdefault(node, {})
+        self._radj.setdefault(node, {})
 
     def add_edge(self, source: str, target: str, **attrs) -> None:
         source = str(source)
         target = str(target)
         self.add_node(source)
         self.add_node(target)
-        self._adj[source][target] = dict(attrs)
+        edge_attrs = dict(attrs)
+        self._adj[source][target] = edge_attrs
+        self._radj[target][source] = edge_attrs
 
     def edges(self, data: bool = False):
         rows = []
@@ -55,11 +59,10 @@ class SimpleDiGraph:
 
     def in_edges(self, node: str, data: bool = False):
         node = str(node)
-        rows = []
-        for source, targets in self._adj.items():
-            if node in targets:
-                rows.append((source, node, targets[node].copy()) if data else (source, node))
-        return rows
+        return [
+            (source, node, attrs.copy()) if data else (source, node)
+            for source, attrs in self._radj.get(node, {}).items()
+        ]
 
     def out_edges(self, node: str, data: bool = False):
         node = str(node)
@@ -74,8 +77,10 @@ class SimpleDiGraph:
         for node in keep:
             if node in self._nodes:
                 graph.add_node(node, **self._nodes[node])
-        for source, target, attrs in self.edges(data=True):
-            if source in keep and target in keep:
+        for source in keep:
+            for target, attrs in self._adj.get(source, {}).items():
+                if target not in keep:
+                    continue
                 graph.add_edge(source, target, **attrs)
         return graph
 
@@ -96,7 +101,15 @@ class SimpleDiGraph:
         except ValueError:
             return False
 
-    def shortest_path(self, source: str, target: str, weight: str = "weight") -> list[str]:
+    def shortest_path(
+        self,
+        source: str,
+        target: str,
+        weight: str | Callable[[dict], float] = "weight",
+        *,
+        directed: bool = True,
+        max_expansions: int | None = None,
+    ) -> list[str]:
         source = str(source)
         target = str(target)
         if source not in self._nodes or target not in self._nodes:
@@ -104,6 +117,7 @@ class SimpleDiGraph:
 
         queue: list[tuple[float, str, list[str]]] = [(0.0, source, [source])]
         seen: dict[str, float] = {}
+        expansions = 0
         while queue:
             cost, node, path = heapq.heappop(queue)
             if node == target:
@@ -111,8 +125,17 @@ class SimpleDiGraph:
             if node in seen and seen[node] <= cost:
                 continue
             seen[node] = cost
-            for next_node, attrs in self._adj.get(node, {}).items():
-                edge_cost = float(attrs.get(weight, 1.0))
+            expansions += 1
+            if max_expansions is not None and expansions > max_expansions:
+                raise ValueError("path search exceeded expansion budget")
+            for next_node, attrs in self._neighbors(node, directed=directed):
+                edge_cost = float(weight(attrs) if callable(weight) else attrs.get(weight, 1.0))
                 heapq.heappush(queue, (cost + edge_cost, next_node, path + [next_node]))
         raise ValueError("no path")
 
+    def _neighbors(self, node: str, *, directed: bool) -> Iterable[tuple[str, dict]]:
+        yield from self._adj.get(node, {}).items()
+        if not directed:
+            for prev_node, attrs in self._radj.get(node, {}).items():
+                if prev_node not in self._adj.get(node, {}):
+                    yield prev_node, attrs

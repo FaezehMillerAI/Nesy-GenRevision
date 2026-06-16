@@ -51,8 +51,8 @@ def compute_clause_scores(
     bio_truths: list[tuple[float, float]] = []
     located_truths: list[tuple[float, float]] = []
     for source, target, attrs in edges:
-        source_type = str(graph.nodes[source].get("type", "unknown")).lower()
-        target_type = str(graph.nodes[target].get("type", "unknown")).lower()
+        source_type = normalize_node_type(graph.nodes[source].get("type", "unknown"))
+        target_type = normalize_node_type(graph.nodes[target].get("type", "unknown"))
         confidence = float(attrs.get("confidence", 1.0))
         reliability = source_reliability.get(str(attrs.get("edge_source", attrs.get("source", "primekg"))), 0.75)
         weight = confidence * reliability
@@ -79,9 +79,24 @@ def _weighted_mean(values: list[tuple[float, float]]) -> float:
     return sum(value * weight for value, weight in values) / denom
 
 
-def _finding_to_diagnosis_score(graph: nx.DiGraph) -> float:
-    findings = [n for n, attrs in graph.nodes(data=True) if str(attrs.get("type", "")).lower() == "phenotype"]
-    diagnoses = [n for n, attrs in graph.nodes(data=True) if str(attrs.get("type", "")).lower() == "disease"]
+def normalize_node_type(node_type: object) -> str:
+    raw = str(node_type).lower().strip().replace("_", " ")
+    if "phenotype" in raw or "effect" in raw or "finding" in raw:
+        return "phenotype"
+    if "disease" in raw or "diagnosis" in raw:
+        return "disease"
+    if "anatomy" in raw or "anatomical" in raw:
+        return "anatomy"
+    if "drug" in raw:
+        return "drug"
+    if "biological process" in raw or "biological_process" in raw:
+        return "biological_process"
+    return raw
+
+
+def _finding_to_diagnosis_score(graph: SimpleDiGraph) -> float:
+    findings = [n for n, attrs in graph.nodes(data=True) if normalize_node_type(attrs.get("type", "")) == "phenotype"]
+    diagnoses = [n for n, attrs in graph.nodes(data=True) if normalize_node_type(attrs.get("type", "")) == "disease"]
     if not findings:
         return 1.0
     if not diagnoses:

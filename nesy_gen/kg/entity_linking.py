@@ -63,6 +63,7 @@ class LexicalEntityLinker:
         norm = normalize_text(text)
         links: list[LinkedEntity] = []
         occupied: set[int] = set()
+        seen_mentions: set[tuple[str, int, int]] = set()
         for row in self.vocabulary.itertuples(index=False):
             alias = str(row.norm_alias)
             pattern = re.compile(rf"(?<!\w){re.escape(alias)}(?!\w)")
@@ -70,6 +71,10 @@ class LexicalEntityLinker:
                 span = set(range(match.start(), match.end()))
                 if span & occupied:
                     continue
+                mention_key = (str(row.node_id), match.start(), match.end())
+                if mention_key in seen_mentions:
+                    continue
+                seen_mentions.add(mention_key)
                 occupied |= span
                 mention = EntityMention(
                     text=str(row.alias),
@@ -106,4 +111,3 @@ def entity_linking_scores(
     recall = 0.0 if not gold else tp / len(gold)
     f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
     return {"precision": precision, "recall": recall, "f1": f1}
-

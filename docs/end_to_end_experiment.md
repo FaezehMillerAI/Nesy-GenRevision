@@ -84,12 +84,32 @@ These outputs directly support:
 
 ## 6. MIMIC-CXR
 
-Use `scripts/build_manifest.py --dataset generic_csv` once the Kaggle MIMIC
-metadata table and column names are identified. The required normalized columns
-are:
+For the Kaggle mirror with `mimic_cxr_aug_train.csv`,
+`mimic_cxr_aug_validate.csv`, and `official_data_iccv_final/files`, build a
+manifest with:
 
-- `study_id`
-- report text column
-- optional image path column
-- optional indication column
-- optional split column
+```bash
+python scripts/build_manifest.py \
+  --dataset mimic_aug \
+  --data-root /root/.cache/kagglehub/datasets/simhadrisadaram/mimic-cxr-dataset/versions/2 \
+  --output /content/drive/MyDrive/mimic_dynamic_graph_outputs/flan_t5_small_run1/mimic_manifest.jsonl
+```
+
+Then build a MIMIC-specific radiology PrimeKG cache and run reasoning:
+
+```bash
+python scripts/build_radiology_primekg.py \
+  --primekg-dir /content/drive/MyDrive/dataverse_files \
+  --manifest /content/drive/MyDrive/mimic_dynamic_graph_outputs/flan_t5_small_run1/mimic_manifest.jsonl \
+  --output-dir /content/drive/MyDrive/primekg_radiology_cache_mimic \
+  --hops 1
+
+python scripts/run_primekg_reasoning.py \
+  --manifest /content/drive/MyDrive/mimic_dynamic_graph_outputs/flan_t5_small_run1/mimic_manifest.jsonl \
+  --primekg-dir /content/drive/MyDrive/primekg_radiology_cache_mimic \
+  --output-dir /content/drive/MyDrive/mimic_dynamic_graph_outputs/flan_t5_small_run1 \
+  --dataset-name mimic \
+  --split test \
+  --limit 50 \
+  --latency-repeats 1
+```

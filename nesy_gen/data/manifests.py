@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import random
 from pathlib import Path
 
@@ -134,3 +135,129 @@ def build_generic_csv_manifest(
 
     write_jsonl(output_path, examples)
     return examples
+
+
+def build_mimic_aug_manifest(
+    dataset_root: str | Path,
+    output_path: str | Path,
+    *,
+    seed: int = 13,
+    validate_test_fraction: float = 0.5,
+) -> list[RadiologyExample]:
+    """Build a manifest from the Kaggle MIMIC-CXR augmented CSV mirror.
+
+    Expected files:
+    - `mimic_cxr_aug_train.csv`
+    - `mimic_cxr_aug_validate.csv`
+
+    The mirror stores image paths and report text as Python-list-like strings.
+    We create one row per available report text, pair it with a preferred
+    frontal image from the same subject row, and split the validation CSV into
+    validation/test partitions deterministically.
+    """
+
+    root = Path(dataset_root)
+    if not (root / "mimic_cxr_aug_train.csv").exists() and root.name == "official_data_iccv_final":
+        root = root.parent
+    train_path = root / "mimic_cxr_aug_train.csv"
+    validate_path = root / "mimic_cxr_aug_validate.csv"
+    if not train_path.exists() or not validate_path.exists():
+        raise FileNotFoundError(
+            f"Expected mimic_cxr_aug_train.csv and mimic_cxr_aug_validate.csv under {root}"
+        )
+
+    train = pd.read_csv(train_path)
+    validate = pd.read_csv(validate_path)
+    validation_subjects = validate["subject_id"].drop_duplicates().tolist()
+    rng = random.Random(seed)
+    rng.shuffle(validation_subjects)
+    test_subjects = set(validation_subjects[: int(len(validation_subjects) * validate_test_fraction)])
+
+    examples: list[RadiologyExample] = []
+    examples.extend(_mimic_rows_to_examples(train, root, split="train"))
+    for example in _mimic_rows_to_examples(validate, root, split="val"):
+        subject_id = example.metadata["subject_id"]
+        split = "test" if subject_id in test_subjects else "val"
+        examples.append(
+            RadiologyExample(
+                study_id=example.study_id,
+                image_path=example.image_path,
+                indication=example.indication,
+                report=example.report,
+                split=split,
+                metadata=example.metadata,
+            )
+        )
+
+    write_jsonl(output_path, examples)
+    return examples
+
+
+def _mimic_rows_to_examples(frame: pd.DataFrame, dataset_root: Path, *, split: str) -> list[RadiologyExample]:
+    examples: list[RadiologyExample] = []
+    files_root = dataset_root / "official_data_iccv_final"
+    for row in frame.itertuples(index=False):
+        row_dict = row._asdict()
+        subject_id = int(row_dict["subject_id"])
+        report_texts = [clean_report_text(text) for text in parse_list_cell(row_dict.get("text", []))]
+        report_texts = [text for text in report_texts if text]
+        if not report_texts:
+            continue
+
+        image_candidates = _preferred_mimic_images(row_dict)
+        if not image_candidates:
+            continue
+        image_path = files_root / image_candidates[0]
+        if not image_path.exists():
+            image_path = dataset_root / image_candidates[0]
+
+        study_id = _study_id_from_path(image_candidates[0]) or f"subject_{subject_id}"
+        for report_idx, report in enumerate(report_texts):
+            suffix = "" if len(report_texts) == 1 else f"_{report_idx}"
+            examples.append(
+                RadiologyExample(
+                    study_id=f"mimic_{study_id}{suffix}",
+                    image_path=str(image_path),
+                    indication="",
+                    report=report,
+                    split=split,
+                    metadata={
+                        "subject_id": subject_id,
+                        "study_id": study_id,
+                        "report_index": report_idx,
+                        "source": "mimic_cxr_aug",
+                    },
+                )
+            )
+    return examples
+
+
+def parse_list_cell(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).lower() != "nan"]
+    if pd.isna(value):
+        return []
+    text = str(value)
+    try:
+        parsed = ast.literal_eval(text)
+    except (SyntaxError, ValueError):
+        return [text] if text and text.lower() != "nan" else []
+    if isinstance(parsed, list):
+        return [str(item) for item in parsed if str(item).lower() != "nan"]
+    return [str(parsed)] if str(parsed).lower() != "nan" else []
+
+
+def _preferred_mimic_images(row_dict: dict[str, object]) -> list[str]:
+    for column in ("PA", "AP", "image", "Lateral"):
+        values = parse_list_cell(row_dict.get(column, []))
+        values = [value for value in values if value.lower().endswith((".jpg", ".jpeg", ".png"))]
+        if values:
+            return values
+    return []
+
+
+def _study_id_from_path(path: str) -> str | None:
+    for part in Path(path).parts:
+        if part.startswith("s") and part[1:].isdigit():
+            return part
+    return None

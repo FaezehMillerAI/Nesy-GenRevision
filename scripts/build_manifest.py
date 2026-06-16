@@ -6,12 +6,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nesy_gen.data.manifests import build_generic_csv_manifest, build_iuxray_manifest
+from nesy_gen.data.manifests import build_generic_csv_manifest, build_iuxray_manifest, build_mimic_aug_manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build dataset JSONL manifests.")
-    parser.add_argument("--dataset", choices=["iuxray", "generic_csv"], required=True)
+    parser.add_argument("--dataset", choices=["iuxray", "mimic_aug", "generic_csv"], required=True)
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--seed", type=int, default=13)
@@ -25,6 +25,8 @@ def main() -> None:
 
     if args.dataset == "iuxray":
         examples = build_iuxray_manifest(args.data_root, args.output, seed=args.seed)
+    elif args.dataset == "mimic_aug":
+        examples = build_mimic_aug_manifest(args.data_root, args.output, seed=args.seed)
     else:
         if not args.csv_path:
             raise ValueError("--csv-path is required for generic_csv")
@@ -44,4 +46,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

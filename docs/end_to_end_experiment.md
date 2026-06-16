@@ -29,16 +29,29 @@ python scripts/build_manifest.py \
 
 ## 3. Run PrimeKG Reasoning
 
+For speed, build a reusable radiology-focused PrimeKG cache once:
+
+```bash
+python scripts/build_radiology_primekg.py \
+  --primekg-dir /content/drive/MyDrive/dataverse_files \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --output-dir /content/drive/MyDrive/primekg_radiology_cache_iuxray \
+  --hops 1
+```
+
+Then point reasoning at the cache directory instead of the full Dataverse folder.
+
 Start with 50 examples:
 
 ```bash
 python scripts/run_primekg_reasoning.py \
   --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
-  --primekg-dir /content/drive/MyDrive/dataverse_files \
+  --primekg-dir /content/drive/MyDrive/primekg_radiology_cache_iuxray \
   --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1 \
   --dataset-name iuxray \
   --split test \
-  --limit 50
+  --limit 50 \
+  --latency-repeats 1
 ```
 
 If this looks healthy, remove `--limit 50` for the full IU test set.
@@ -80,4 +93,3 @@ are:
 - optional image path column
 - optional indication column
 - optional split column
-

@@ -32,6 +32,8 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
+    parser.add_argument("--latency-repeats", type=int, default=1)
+    parser.add_argument("--skip-latency", action="store_true")
     args = parser.parse_args()
 
     examples = [example for example in load_jsonl(args.manifest) if example.split == args.split]
@@ -41,17 +43,23 @@ def main() -> None:
         raise ValueError(f"No examples found for split={args.split}")
 
     primekg_dir = Path(args.primekg_dir)
+    print(f"Loading PrimeKG from {primekg_dir}...", flush=True)
     kg = PrimeKGGraph.from_dataverse_dir(primekg_dir)
+    print(f"PrimeKG loaded: {len(list(kg.graph.nodes))} nodes, {len(kg.graph.edges())} edges", flush=True)
     nodes_path = primekg_dir / "nodes.csv"
     if nodes_path.exists():
+        print(f"Loading node vocabulary from {nodes_path}...", flush=True)
         nodes = pd.read_csv(nodes_path)
         vocab = nodes.rename(
             columns={"node_id": "node_id", "node_name": "node_name", "node_type": "node_type"}
         )[["node_id", "node_name", "node_type"]]
         vocab["alias"] = vocab["node_name"]
     else:
+        print("Building node vocabulary from edge list...", flush=True)
         vocab = _vocab_from_edges(kg.edges)
+    print(f"Vocabulary rows: {len(vocab)}", flush=True)
 
+    print("Building pipeline...", flush=True)
     pipeline = NesyGenPipeline(
         linker=LexicalEntityLinker(vocab),
         subgraph_builder=TemporalSubgraphBuilder(
@@ -62,7 +70,11 @@ def main() -> None:
         gate=ConsistencyGate(min_grounding=0.30, max_hallucination=0.50, min_entailment=0.50),
     )
 
-    latency = measure_pipeline_latency(pipeline, examples[0], warmup=1, repeats=3)
+    latency = {}
+    if not args.skip_latency:
+        print("Measuring latency...", flush=True)
+        latency = measure_pipeline_latency(pipeline, examples[0], warmup=1, repeats=args.latency_repeats)
+        print(f"Latency: {latency}", flush=True)
     rows = []
     for example in tqdm(examples, desc="PrimeKG reasoning"):
         rows.extend(run_reasoning_batch(pipeline, [example]))
@@ -90,4 +102,3 @@ def _vocab_from_edges(edges: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     main()
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 import pandas as pd
 
@@ -33,6 +33,16 @@ class LinkedEntity:
     source: str = "lexical"
 
 
+class _AliasRecord(NamedTuple):
+    alias: str
+    norm_alias: str
+    tokens: tuple[str, ...]
+    node_id: str
+    node_name: str
+    node_type: str
+    confidence: float
+
+
 class LexicalEntityLinker:
     """Deterministic linker used for reproducible experiments and audits.
 
@@ -50,6 +60,27 @@ class LexicalEntityLinker:
         vocab["norm_alias"] = vocab["alias"].map(normalize_text)
         vocab = vocab[vocab["norm_alias"].str.len() > 0]
         self.vocabulary = vocab.sort_values("norm_alias", key=lambda col: col.str.len(), ascending=False)
+        self._aliases_by_first_token: dict[str, list[_AliasRecord]] = {}
+        for row in self.vocabulary.itertuples(index=False):
+            tokens = tuple(str(row.norm_alias).split())
+            if not tokens:
+                continue
+            record = _AliasRecord(
+                alias=str(row.alias),
+                norm_alias=str(row.norm_alias),
+                tokens=tokens,
+                node_id=str(row.node_id),
+                node_name=str(row.node_name),
+                node_type=str(row.node_type),
+                confidence=float(getattr(row, "confidence", 1.0)),
+            )
+            self._aliases_by_first_token.setdefault(tokens[0], []).append(record)
+        for first_token, records in self._aliases_by_first_token.items():
+            self._aliases_by_first_token[first_token] = sorted(
+                records,
+                key=lambda record: (len(record.tokens), len(record.norm_alias)),
+                reverse=True,
+            )
 
     @classmethod
     def from_primekg_nodes(cls, nodes: pd.DataFrame) -> "LexicalEntityLinker":
@@ -61,38 +92,58 @@ class LexicalEntityLinker:
 
     def link_text(self, text: str) -> list[LinkedEntity]:
         norm = normalize_text(text)
+        tokens = norm.split()
+        spans = _token_spans(norm, tokens)
         links: list[LinkedEntity] = []
-        occupied: set[int] = set()
+        occupied_tokens: set[int] = set()
         seen_mentions: set[tuple[str, int, int]] = set()
-        for row in self.vocabulary.itertuples(index=False):
-            alias = str(row.norm_alias)
-            pattern = re.compile(rf"(?<!\w){re.escape(alias)}(?!\w)")
-            for match in pattern.finditer(norm):
-                span = set(range(match.start(), match.end()))
-                if span & occupied:
+        for idx, token in enumerate(tokens):
+            if idx in occupied_tokens:
+                continue
+            for record in self._aliases_by_first_token.get(token, []):
+                end_idx = idx + len(record.tokens)
+                if end_idx > len(tokens):
                     continue
-                mention_key = (str(row.node_id), match.start(), match.end())
+                if any(pos in occupied_tokens for pos in range(idx, end_idx)):
+                    continue
+                if tuple(tokens[idx:end_idx]) != record.tokens:
+                    continue
+                start_char = spans[idx][0]
+                end_char = spans[end_idx - 1][1]
+                mention_key = (record.node_id, start_char, end_char)
                 if mention_key in seen_mentions:
                     continue
                 seen_mentions.add(mention_key)
-                occupied |= span
+                occupied_tokens.update(range(idx, end_idx))
                 mention = EntityMention(
-                    text=str(row.alias),
-                    start=match.start(),
-                    end=match.end(),
-                    label=str(row.node_type),
-                    negated=_is_negated(norm, match.start()),
+                    text=record.alias,
+                    start=start_char,
+                    end=end_char,
+                    label=record.node_type,
+                    negated=_is_negated(norm, start_char),
                 )
                 links.append(
                     LinkedEntity(
                         mention=mention,
-                        node_id=str(row.node_id),
-                        node_name=str(row.node_name),
-                        node_type=str(row.node_type),
-                        confidence=float(getattr(row, "confidence", 1.0)),
+                        node_id=record.node_id,
+                        node_name=record.node_name,
+                        node_type=record.node_type,
+                        confidence=record.confidence,
                     )
                 )
+                break
         return links
+
+
+def _token_spans(norm_text: str, tokens: list[str]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for token in tokens:
+        start = norm_text.find(token, cursor)
+        end = start + len(token)
+        spans.append((start, end))
+        cursor = end
+    return spans
 
 
 def _is_negated(norm_text: str, start: int, window: int = 28) -> bool:

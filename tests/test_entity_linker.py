@@ -33,7 +33,14 @@ class EntityLinkerTest(unittest.TestCase):
         self.assertAlmostEqual(scores["precision"], 1.0)
         self.assertAlmostEqual(scores["recall"], 0.5)
 
+    def test_repeated_mentions_are_linked(self):
+        vocab = pd.DataFrame(
+            [{"node_id": "1", "node_name": "atelectasis", "node_type": "phenotype", "alias": "atelectasis"}]
+        )
+        linker = LexicalEntityLinker(vocab)
+        links = linker.link_text("Atelectasis and mild atelectasis are present.")
+        self.assertEqual(len(links), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
-

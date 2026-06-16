@@ -146,6 +146,30 @@ python scripts/compare_generation_systems.py \
   --system retrieval /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv
 ```
 
+Stronger BLIP fine-tuning path:
+
+```bash
+python scripts/train_blip_report_generator.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --output-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/checkpoints/blip_base_iuxray_1k \
+  --model-name Salesforce/blip-image-captioning-base \
+  --epochs 3 \
+  --batch-size 4 \
+  --gradient-accumulation-steps 2 \
+  --learning-rate 2e-5 \
+  --max-train-examples 1000 \
+  --max-val-examples 200 \
+  --fp16
+
+python scripts/generate_blip_reports.py \
+  --manifest /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_manifest.jsonl \
+  --checkpoint-dir /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/checkpoints/blip_base_iuxray_1k \
+  --output-csv /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_blip_base_1k_generated_test.csv \
+  --split test \
+  --batch-size 4 \
+  --num-beams 3
+```
+
 Build qualitative HTML and figures:
 
 ```bash

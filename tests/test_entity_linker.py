@@ -41,6 +41,23 @@ class EntityLinkerTest(unittest.TestCase):
         links = linker.link_text("Atelectasis and mild atelectasis are present.")
         self.assertEqual(len(links), 2)
 
+    def test_blocks_generic_orientation_and_pathway_terms(self):
+        vocab = pd.DataFrame(
+            [
+                {"node_id": "1", "node_name": "Left", "node_type": "effect/phenotype", "alias": "Left"},
+                {"node_id": "2", "node_name": "Disease", "node_type": "pathway", "alias": "Disease"},
+                {
+                    "node_id": "3",
+                    "node_name": "Pleural effusion",
+                    "node_type": "effect/phenotype",
+                    "alias": "Pleural effusion",
+                },
+            ]
+        )
+        linker = LexicalEntityLinker(vocab)
+        links = linker.link_text("Left pleural effusion. No acute disease.")
+        self.assertEqual([link.node_id for link in links], ["3"])
+
 
 if __name__ == "__main__":
     unittest.main()

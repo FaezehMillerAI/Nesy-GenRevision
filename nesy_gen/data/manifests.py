@@ -52,6 +52,7 @@ def build_iuxray_manifest(
     reports = pd.read_csv(reports_path)
     projections = pd.read_csv(projections_path)
     selected = projections[projections["projection"].str.lower().eq(projection.lower())].copy()
+    selected = selected.sort_values(["uid", "filename"]).drop_duplicates("uid", keep="first")
 
     image_files = {path.name: path for path in root.rglob("*.png")}
     merged = reports.merge(selected[["uid", "filename", "projection"]], on="uid", how="inner")
@@ -133,4 +134,3 @@ def build_generic_csv_manifest(
 
     write_jsonl(output_path, examples)
     return examples
-

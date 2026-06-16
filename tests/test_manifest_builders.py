@@ -15,6 +15,7 @@ class ManifestBuildersTest(unittest.TestCase):
             image_dir = root / "images"
             image_dir.mkdir()
             (image_dir / "1.png").write_text("not-an-image", encoding="utf-8")
+            (image_dir / "1b.png").write_text("not-an-image", encoding="utf-8")
             pd.DataFrame(
                 [
                     {
@@ -30,7 +31,10 @@ class ManifestBuildersTest(unittest.TestCase):
                 ]
             ).to_csv(root / "indiana_reports.csv", index=False)
             pd.DataFrame(
-                [{"uid": 1, "filename": "1.png", "projection": "Frontal"}]
+                [
+                    {"uid": 1, "filename": "1.png", "projection": "Frontal"},
+                    {"uid": 1, "filename": "1b.png", "projection": "Frontal"},
+                ]
             ).to_csv(root / "indiana_projections.csv", index=False)
 
             out = root / "manifest.jsonl"
@@ -43,4 +47,3 @@ class ManifestBuildersTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

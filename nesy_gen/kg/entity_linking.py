@@ -9,6 +9,32 @@ import pandas as pd
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+DEFAULT_BLOCKED_ALIASES = {
+    "acute",
+    "ap",
+    "borderline",
+    "disease",
+    "focal",
+    "large",
+    "lateral",
+    "left",
+    "mild",
+    "moderate",
+    "normal",
+    "pa",
+    "portable",
+    "right",
+    "small",
+    "stable",
+    "unchanged",
+    "view",
+    "views",
+}
+
+DEFAULT_BLOCKED_NODE_TYPE_FRAGMENTS = {
+    "pathway",
+}
+
 
 def normalize_text(text: str) -> str:
     return " ".join(TOKEN_RE.findall(text.lower()))
@@ -50,15 +76,40 @@ class LexicalEntityLinker:
     extractors while preserving the same LinkedEntity output contract.
     """
 
-    def __init__(self, vocabulary: pd.DataFrame):
+    def __init__(
+        self,
+        vocabulary: pd.DataFrame,
+        *,
+        blocked_aliases: Iterable[str] | None = None,
+        blocked_node_type_fragments: Iterable[str] | None = None,
+    ):
         required = {"node_id", "node_name", "node_type"}
         missing = sorted(required - set(vocabulary.columns))
         if missing:
             raise ValueError(f"Vocabulary missing columns: {missing}")
+        blocked_alias_set = {
+            normalize_text(alias)
+            for alias in (DEFAULT_BLOCKED_ALIASES if blocked_aliases is None else blocked_aliases)
+        }
+        blocked_type_fragments = tuple(
+            fragment.lower()
+            for fragment in (
+                DEFAULT_BLOCKED_NODE_TYPE_FRAGMENTS
+                if blocked_node_type_fragments is None
+                else blocked_node_type_fragments
+            )
+        )
         vocab = vocabulary.copy()
         vocab["alias"] = vocab.get("alias", vocab["node_name"])
         vocab["norm_alias"] = vocab["alias"].map(normalize_text)
         vocab = vocab[vocab["norm_alias"].str.len() > 0]
+        vocab = vocab[~vocab["norm_alias"].isin(blocked_alias_set)]
+        vocab = vocab[
+            ~vocab["node_type"]
+            .astype(str)
+            .str.lower()
+            .map(lambda node_type: any(fragment in node_type for fragment in blocked_type_fragments))
+        ]
         self.vocabulary = vocab.sort_values("norm_alias", key=lambda col: col.str.len(), ascending=False)
         self._aliases_by_first_token: dict[str, list[_AliasRecord]] = {}
         for row in self.vocabulary.itertuples(index=False):
@@ -83,12 +134,12 @@ class LexicalEntityLinker:
             )
 
     @classmethod
-    def from_primekg_nodes(cls, nodes: pd.DataFrame) -> "LexicalEntityLinker":
-        return cls(nodes.rename(columns={"id": "node_id", "name": "node_name", "type": "node_type"}))
+    def from_primekg_nodes(cls, nodes: pd.DataFrame, **kwargs) -> "LexicalEntityLinker":
+        return cls(nodes.rename(columns={"id": "node_id", "name": "node_name", "type": "node_type"}), **kwargs)
 
     @classmethod
-    def from_crosswalk_csv(cls, path: str) -> "LexicalEntityLinker":
-        return cls(pd.read_csv(path))
+    def from_crosswalk_csv(cls, path: str, **kwargs) -> "LexicalEntityLinker":
+        return cls(pd.read_csv(path), **kwargs)
 
     def link_text(self, text: str) -> list[LinkedEntity]:
         norm = normalize_text(text)

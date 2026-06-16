@@ -67,7 +67,8 @@ def build_processor_tokenizer_model(config: GeneratorConfig):
     model.config.pad_token_id = tokenizer.pad_token_id
     model.generation_config.max_length = config.max_target_length
     model.generation_config.no_repeat_ngram_size = 3
-    model.generation_config.early_stopping = True
+    model.generation_config.early_stopping = False
+    model.generation_config.num_beams = 1
     model.generation_config.decoder_start_token_id = model.config.decoder_start_token_id
     model.generation_config.eos_token_id = model.config.eos_token_id
     model.generation_config.pad_token_id = model.config.pad_token_id

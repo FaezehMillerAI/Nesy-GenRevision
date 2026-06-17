@@ -49,6 +49,10 @@ def select_primekg_verified_report(
     candidates: list[RagCandidate],
     *,
     min_graph_score: float | None = None,
+    selection_objective: str = "graph",
+    graph_score_weight: float = 0.55,
+    evidence_weight: float = 0.35,
+    gate_weight: float = 0.10,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     verified = verify_report_candidates(
         pipeline,
@@ -70,7 +74,15 @@ def select_primekg_verified_report(
                 **asdict(candidate),
             }
         )
-    selected = select_graph_verified_candidate(verified, min_graph_score=min_graph_score)
+    selected = _select_candidate(
+        verified,
+        candidates,
+        min_graph_score=min_graph_score,
+        selection_objective=selection_objective,
+        graph_score_weight=graph_score_weight,
+        evidence_weight=evidence_weight,
+        gate_weight=gate_weight,
+    )
     if selected is None:
         fallback = candidates[0] if candidates else RagCandidate("none", 0, "", 0.0)
         selected_row = {
@@ -112,3 +124,56 @@ def select_primekg_verified_report(
 
 def _normalize(text: str) -> str:
     return " ".join(str(text).split())
+
+
+def _select_candidate(
+    verified: list[VerifiedCandidate],
+    candidates: list[RagCandidate],
+    *,
+    min_graph_score: float | None,
+    selection_objective: str,
+    graph_score_weight: float,
+    evidence_weight: float,
+    gate_weight: float,
+) -> VerifiedCandidate | None:
+    if selection_objective == "graph":
+        return select_graph_verified_candidate(verified, min_graph_score=min_graph_score)
+
+    evidence_by_prediction = {
+        _normalize(candidate.prediction): candidate.evidence_score for candidate in candidates
+    }
+    eligible = [
+        candidate
+        for candidate in verified
+        if min_graph_score is None or candidate.graph_score >= min_graph_score
+    ]
+    if not eligible:
+        eligible = verified
+    if not eligible:
+        return None
+
+    if selection_objective == "evidence":
+        return max(
+            eligible,
+            key=lambda candidate: (
+                evidence_by_prediction.get(_normalize(candidate.prediction), 0.0),
+                candidate.gate_passed,
+                candidate.graph_score,
+                -candidate.candidate_rank,
+            ),
+        )
+    if selection_objective != "hybrid":
+        raise ValueError("selection_objective must be one of: graph, evidence, hybrid")
+
+    return max(
+        eligible,
+        key=lambda candidate: (
+            graph_score_weight * candidate.graph_score
+            + evidence_weight * evidence_by_prediction.get(_normalize(candidate.prediction), 0.0)
+            + gate_weight * candidate.gate_acceptance_rate
+            + (0.05 if candidate.gate_passed else 0.0),
+            candidate.graph_score,
+            evidence_by_prediction.get(_normalize(candidate.prediction), 0.0),
+            -candidate.candidate_rank,
+        ),
+    )

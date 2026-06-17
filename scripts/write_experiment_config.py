@@ -28,6 +28,14 @@ def main() -> None:
     )
     parser.add_argument("--graph-token-boost", type=float, default=2.0)
     parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
+    parser.add_argument(
+        "--selection-objective",
+        choices=["graph", "evidence", "hybrid"],
+        default="graph",
+    )
+    parser.add_argument("--graph-score-weight", type=float, default=0.55)
+    parser.add_argument("--evidence-weight", type=float, default=0.35)
+    parser.add_argument("--gate-weight", type=float, default=0.10)
     parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
     parser.add_argument("--official-metrics", action="store_true")
     args = parser.parse_args()
@@ -45,6 +53,10 @@ def main() -> None:
         "decoding_mode": args.decoding_mode,
         "graph_token_boost": args.graph_token_boost,
         "unsupported_token_penalty": args.unsupported_token_penalty,
+        "selection_objective": args.selection_objective,
+        "graph_score_weight": args.graph_score_weight,
+        "evidence_weight": args.evidence_weight,
+        "gate_weight": args.gate_weight,
         "subgraph_strategy": args.subgraph_strategy,
         "official_metrics": args.official_metrics,
         "methods": {

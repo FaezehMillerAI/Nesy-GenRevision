@@ -68,6 +68,23 @@ class RagGenerationTest(unittest.TestCase):
         self.assertEqual(selected["selection_status"], "primekg_ltn_gate_selected")
         self.assertEqual(len(candidates), 2)
 
+    def test_hybrid_selection_can_prefer_retrieval_evidence(self):
+        example = RadiologyExample("s1", None, "", "reference", "test")
+        selected, _ = select_primekg_verified_report(
+            _FakePipeline(),
+            example,
+            [
+                RagCandidate("retrieval", 1, "bad but retrieved report", 0.95, "tr1"),
+                RagCandidate("r2gen_t5", 1, "good generated report", 0.30, ""),
+            ],
+            selection_objective="hybrid",
+            graph_score_weight=0.10,
+            evidence_weight=0.85,
+            gate_weight=0.05,
+        )
+
+        self.assertEqual(selected["prediction"], "bad but retrieved report")
+
 
 if __name__ == "__main__":
     unittest.main()

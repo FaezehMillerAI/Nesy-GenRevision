@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--retrieval-top-k", type=int, default=5)
     parser.add_argument("--r2gen-checkpoint-dir")
     parser.add_argument("--r2gen-num-candidates", type=int, default=0)
+    parser.add_argument("--generated-evidence-score", type=float, default=0.50)
     parser.add_argument("--r2gen-num-beams", type=int, default=6)
     parser.add_argument("--r2gen-batch-size", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=120)
@@ -56,6 +57,15 @@ def main() -> None:
     parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
     parser.add_argument("--min-graph-score", type=float)
+    parser.add_argument(
+        "--selection-objective",
+        choices=["graph", "evidence", "hybrid"],
+        default="graph",
+        help="Candidate selection objective after PrimeKG/LTN verification.",
+    )
+    parser.add_argument("--graph-score-weight", type=float, default=0.55)
+    parser.add_argument("--evidence-weight", type=float, default=0.35)
+    parser.add_argument("--gate-weight", type=float, default=0.10)
     parser.add_argument("--beta-accept", type=float, default=0.65)
     parser.add_argument("--gamma-flag", type=float, default=0.50)
     parser.add_argument("--min-grounding", type=float, default=0.30)
@@ -89,6 +99,7 @@ def main() -> None:
             graph_token_boost=args.graph_token_boost,
             unsupported_token_penalty=args.unsupported_token_penalty,
             constraint_max_terms=args.constraint_max_terms,
+            generated_evidence_score=args.generated_evidence_score,
         )
         for study_id, candidates in generated_map.items():
             candidate_map.setdefault(study_id, []).extend(candidates)
@@ -114,6 +125,10 @@ def main() -> None:
             example,
             candidate_map.get(example.study_id, []),
             min_graph_score=args.min_graph_score,
+            selection_objective=args.selection_objective,
+            graph_score_weight=args.graph_score_weight,
+            evidence_weight=args.evidence_weight,
+            gate_weight=args.gate_weight,
         )
         selected_rows.append(selected)
         candidate_rows.extend(candidates)
@@ -142,6 +157,7 @@ def generate_r2gen_candidates(
     graph_token_boost: float = 2.0,
     unsupported_token_penalty: float = 0.0,
     constraint_max_terms: int = 2500,
+    generated_evidence_score: float = 0.50,
 ) -> dict[str, list[RagCandidate]]:
     deps = require_r2gen_t5_dependencies()
     torch = deps["torch"]
@@ -218,7 +234,7 @@ def generate_r2gen_candidates(
                         source="r2gen_t5",
                         source_rank=rank,
                         prediction=prediction,
-                        evidence_score=1.0,
+                        evidence_score=generated_evidence_score,
                     )
                     for rank, prediction in enumerate(texts[start:end], start=1)
                     if prediction

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 from tqdm.auto import tqdm
 
@@ -38,6 +39,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--max-train-examples", type=int)
     parser.add_argument("--max-val-examples", type=int)
+    parser.add_argument(
+        "--progress-style",
+        choices=["plain", "tqdm", "none"],
+        default="plain",
+        help="plain is safest for Colab subprocess output; tqdm is best for terminals.",
+    )
+    parser.add_argument("--progress-every", type=int, default=5)
     parser.add_argument("--fp16", action="store_true")
     args = parser.parse_args()
 
@@ -111,13 +119,12 @@ def main() -> None:
         total_loss = 0.0
         seen_examples = 0
         optimizer.zero_grad(set_to_none=True)
-        train_progress = tqdm(
+        train_progress = _progress_iter(
             train_loader,
             desc=f"train {epoch + 1}/{args.epochs}",
-            dynamic_ncols=True,
-            leave=True,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
+            style=args.progress_style,
         )
+        train_start = time.monotonic()
         for step, batch in enumerate(train_progress):
             images = batch["image"].to(device)
             labels = batch["labels"].to(device)
@@ -132,37 +139,50 @@ def main() -> None:
                 scheduler.step()
             total_loss += loss.item() * args.gradient_accumulation_steps
             seen_examples += len(batch["study_id"])
-            train_progress.set_postfix(
-                {
+            _update_progress(
+                train_progress,
+                style=args.progress_style,
+                desc=f"train {epoch + 1}/{args.epochs}",
+                step=step + 1,
+                total=len(train_loader),
+                start_time=train_start,
+                log_every=args.progress_every,
+                metrics={
                     "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
                     "avg": f"{total_loss / (step + 1):.4f}",
                     "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
-                    "seen": seen_examples,
+                    "seen": str(seen_examples),
                     **_gpu_progress(torch, device),
-                }
+                },
             )
 
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            val_progress = tqdm(
+            val_progress = _progress_iter(
                 val_loader,
                 desc=f"valid {epoch + 1}/{args.epochs}",
-                dynamic_ncols=True,
-                leave=True,
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
+                style=args.progress_style,
             )
+            val_start = time.monotonic()
             for step, batch in enumerate(val_progress):
                 images = batch["image"].to(device)
                 labels = batch["labels"].to(device)
                 loss = model.forward(images, labels=labels).loss
                 val_loss += loss.item()
-                val_progress.set_postfix(
-                    {
+                _update_progress(
+                    val_progress,
+                    style=args.progress_style,
+                    desc=f"valid {epoch + 1}/{args.epochs}",
+                    step=step + 1,
+                    total=len(val_loader),
+                    start_time=val_start,
+                    log_every=args.progress_every,
+                    metrics={
                         "loss": f"{loss.item():.4f}",
                         "avg": f"{val_loss / (step + 1):.4f}",
                         **_gpu_progress(torch, device),
-                    }
+                    },
                 )
 
         row = {
@@ -186,6 +206,68 @@ def _gpu_progress(torch, device) -> dict[str, str]:
     allocated = torch.cuda.memory_allocated(device) / (1024**3)
     reserved = torch.cuda.memory_reserved(device) / (1024**3)
     return {"gpu_gb": f"{allocated:.1f}/{reserved:.1f}"}
+
+
+def _progress_iter(iterable, *, desc: str, style: str):
+    if style == "tqdm":
+        return tqdm(
+            iterable,
+            desc=desc,
+            dynamic_ncols=True,
+            leave=True,
+            file=sys.stdout,
+            disable=False,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
+        )
+    return iterable
+
+
+def _update_progress(
+    progress,
+    *,
+    style: str,
+    desc: str,
+    step: int,
+    total: int,
+    start_time: float,
+    log_every: int,
+    metrics: dict[str, str],
+) -> None:
+    if style == "none":
+        return
+    if style == "tqdm":
+        progress.set_postfix(metrics)
+        return
+    log_every = max(1, log_every)
+    if step % log_every != 0 and step != total:
+        return
+    elapsed = max(0.0, time.monotonic() - start_time)
+    rate = step / elapsed if elapsed else 0.0
+    remaining = (total - step) / rate if rate else 0.0
+    metric_text = " ".join(f"{key}={value}" for key, value in metrics.items())
+    print(
+        (
+            f"{desc} {_ascii_bar(step, total)} {step}/{total} "
+            f"{100 * step / max(1, total):5.1f}% "
+            f"elapsed={_format_seconds(elapsed)} eta={_format_seconds(remaining)} "
+            f"{metric_text}"
+        ),
+        flush=True,
+    )
+
+
+def _ascii_bar(step: int, total: int, *, width: int = 24) -> str:
+    filled = int(width * step / max(1, total))
+    return "[" + "#" * filled + "." * (width - filled) + "]"
+
+
+def _format_seconds(seconds: float) -> str:
+    seconds = int(seconds)
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
 
 
 if __name__ == "__main__":

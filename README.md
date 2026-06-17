@@ -115,7 +115,25 @@ For each dataset and method variant, save:
   constrained decoding.
 
 See [docs/aaai_methodology.md](docs/aaai_methodology.md) for the recommended
-methodology and claim boundaries.
+methodology and claim boundaries. See
+[docs/reviewer_response_matrix.md](docs/reviewer_response_matrix.md) for the
+reviewer concern-to-artifact mapping.
+
+The main ablation suite is:
+
+```bash
+python scripts/run_ablation_suite.py \
+  --manifest <MANIFEST> \
+  --primekg-dir <RADIOLOGY_PRIMEKG_CACHE> \
+  --output-dir <OUTPUT_DIR>/ablation_suite \
+  --dataset-name <DATASET_NAME> \
+  --generator-checkpoint-dir <VISION_T5_CHECKPOINT> \
+  --split test
+```
+
+For the BLEU-oriented graph setting, use the emitted
+`graph_constrained_bleu_guarded` variant and report it together with the balanced
+graph-constrained variant.
 
 ## Important Claim Boundary
 

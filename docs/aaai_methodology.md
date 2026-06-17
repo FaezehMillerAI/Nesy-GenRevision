@@ -61,6 +61,43 @@ Run the following for IU-Xray and MIMIC-CXR:
 For the final paper, prefer the simplified Colab notebook for full runs and the
 advanced notebook only for ablations.
 
+The runnable ablation suite is:
+
+```bash
+python scripts/run_ablation_suite.py \
+  --manifest <MANIFEST> \
+  --primekg-dir <RADIOLOGY_PRIMEKG_CACHE> \
+  --output-dir <OUTPUT_DIR>/ablation_suite \
+  --dataset-name <DATASET_NAME> \
+  --generator-checkpoint-dir <VISION_T5_CHECKPOINT> \
+  --split test
+```
+
+Use `--limit 100 --dry-run` first to inspect the commands.
+
+## BLEU-Oriented But Defensible Profile
+
+The target of BLEU-1 above 0.5 should be pursued through retrieval evidence and
+candidate selection, not by tuning against test references. The
+`graph_constrained_bleu_guarded` ablation uses this reference-free scoring rule:
+
+\[
+S(c) = 0.30\,G(c) + 0.60\,R(c) + 0.10\,A(c)
+\]
+
+where \(G(c)\) is PrimeKG/LTN graph satisfaction, \(R(c)\) is retrieval evidence
+available at inference time, and \(A(c)\) is the consistency-gate acceptance
+signal. The candidate is still PrimeKG-audited; the stronger retrieval weight
+only makes the final selection more lexical-overlap friendly.
+
+Report this profile alongside the balanced graph profile. If it reaches the
+BLEU target, the claim should be:
+
+> Evidence-weighted graph-constrained Nesy-Gen improves lexical overlap while
+> retaining PrimeKG/LTN verification.
+
+It should not be claimed that graph reasoning alone increases BLEU.
+
 ## Required Evaluation
 
 Report three groups of metrics.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import random
 from pathlib import Path
 
@@ -137,6 +138,68 @@ def build_generic_csv_manifest(
     return examples
 
 
+def build_r2gen_iuxray_manifest(
+    data_root: str | Path,
+    output_path: str | Path,
+    *,
+    one_example_per_image: bool = True,
+) -> list[RadiologyExample]:
+    """Build a manifest from the R2Gen IU-Xray `annotation.json` layout.
+
+    Common layouts supported:
+    - `<data_root>/annotation.json` and `<data_root>/images/...`
+    - `<data_root>/iu_xray/annotation.json` and `<data_root>/iu_xray/images/...`
+
+    The R2Gen annotation stores predefined `train`, `val`, and `test` splits
+    and each study may contain multiple image paths. By default we follow the
+    original notebook convention and create one example per image.
+    """
+
+    root = Path(data_root)
+    annotation_path = _find_r2gen_annotation(root)
+    annotation_root = annotation_path.parent
+    data = json.loads(annotation_path.read_text(encoding="utf-8"))
+    if not all(split in data for split in ("train", "val", "test")):
+        raise ValueError(f"Expected train/val/test keys in {annotation_path}")
+
+    examples: list[RadiologyExample] = []
+    for split in ("train", "val", "test"):
+        for row in data[split]:
+            report = clean_report_text(row.get("report", ""))
+            if not report:
+                continue
+            study_id = str(row.get("id") or row.get("uid") or f"{split}_{len(examples)}")
+            image_paths = row.get("image_path") or row.get("images") or []
+            if isinstance(image_paths, str):
+                image_paths = [image_paths]
+            if not image_paths:
+                continue
+            selected_paths = image_paths if one_example_per_image else image_paths[:1]
+            for image_idx, image_value in enumerate(selected_paths):
+                image_path = _resolve_r2gen_image_path(annotation_root, str(image_value))
+                if image_path is None:
+                    continue
+                suffix = f"_{image_idx}" if one_example_per_image and len(selected_paths) > 1 else ""
+                examples.append(
+                    RadiologyExample(
+                        study_id=f"r2gen_{study_id}{suffix}",
+                        image_path=str(image_path),
+                        indication=clean_report_text(row.get("indication", "")),
+                        report=report,
+                        split=split,
+                        metadata={
+                            "source": "r2gen_iuxray",
+                            "r2gen_id": study_id,
+                            "image_path": str(image_value),
+                            "image_index": image_idx,
+                        },
+                    )
+                )
+
+    write_jsonl(output_path, examples)
+    return examples
+
+
 def build_mimic_aug_manifest(
     dataset_root: str | Path,
     output_path: str | Path,
@@ -191,6 +254,43 @@ def build_mimic_aug_manifest(
 
     write_jsonl(output_path, examples)
     return examples
+
+
+def _find_r2gen_annotation(root: Path) -> Path:
+    candidates = [
+        root / "annotation.json",
+        root / "iu_xray" / "annotation.json",
+        root / "iu_xray" / "iu_xray" / "annotation.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    matches = list(root.rglob("annotation.json"))
+    if matches:
+        return matches[0]
+    raise FileNotFoundError(f"Could not find R2Gen annotation.json under {root}")
+
+
+def _resolve_r2gen_image_path(annotation_root: Path, image_value: str) -> Path | None:
+    value = Path(image_value)
+    candidates = []
+    if value.is_absolute():
+        candidates.append(value)
+    else:
+        candidates.extend(
+            [
+                annotation_root / value,
+                annotation_root / "images" / value,
+                annotation_root / "iu_xray" / "images" / value,
+                annotation_root.parent / value,
+                annotation_root.parent / "images" / value,
+                annotation_root.parent / "iu_xray" / "images" / value,
+            ]
+        )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _mimic_rows_to_examples(frame: pd.DataFrame, dataset_root: Path, *, split: str) -> list[RadiologyExample]:

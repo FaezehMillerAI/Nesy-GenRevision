@@ -41,7 +41,7 @@ def run_tfidf_retrieval_topk(
         raise ValueError("train_examples cannot be empty")
     if top_k < 1:
         raise ValueError("top_k must be >= 1")
-    train_queries = [_query_text(example) for example in train_examples]
+    train_queries = [_document_text(example) for example in train_examples]
     test_queries = [_query_text(example) for example in query_examples]
     idf = _idf(train_queries)
     train_vectors = [_tfidf_vector(text, idf) for text in train_queries]
@@ -66,10 +66,21 @@ def run_tfidf_retrieval_topk(
     return all_predictions
 
 
+def _document_text(example: RadiologyExample) -> str:
+    """Represent retrievable training records without exposing test labels."""
+
+    text = (
+        f"{example.indication} {example.metadata.get('problems', '')} "
+        f"{example.metadata.get('mesh', '')} {example.report}"
+    )
+    return " ".join(text.split())
+
+
 def _query_text(example: RadiologyExample) -> str:
+    """Represent a test query using only information available at inference time."""
+
     text = f"{example.indication} {example.metadata.get('problems', '')} {example.metadata.get('mesh', '')}"
-    text = " ".join(text.split())
-    return text if text else example.report
+    return " ".join(text.split())
 
 
 def _tokens(text: str) -> list[str]:

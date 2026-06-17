@@ -28,6 +28,17 @@ class RetrievalBaselineTest(unittest.TestCase):
         self.assertEqual(preds[0][0].rank, 1)
         self.assertEqual(preds[0][1].rank, 2)
 
+    def test_retrieval_does_not_use_test_reference_as_query(self):
+        train = [
+            RadiologyExample("tr1", None, "", "Exact hidden reference.", "train"),
+            RadiologyExample("tr2", None, "", "Different report.", "train"),
+        ]
+        test = [RadiologyExample("te1", None, "", "Exact hidden reference.", "test")]
+
+        preds = run_tfidf_retrieval_topk(train, test, top_k=2)
+
+        self.assertEqual([prediction.similarity for prediction in preds[0]], [0.0, 0.0])
+
 
 if __name__ == "__main__":
     unittest.main()

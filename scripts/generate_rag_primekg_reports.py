@@ -247,7 +247,9 @@ def _constraint_evidence_text(
     retrieval_candidates: list[RagCandidate],
 ) -> str:
     evidence_parts = [example.indication]
-    evidence_parts.extend(candidate.prediction for candidate in retrieval_candidates)
+    evidence_parts.extend(
+        candidate.prediction for candidate in retrieval_candidates if candidate.evidence_score > 0.0
+    )
     return " ".join(part for part in evidence_parts if part)
 
 

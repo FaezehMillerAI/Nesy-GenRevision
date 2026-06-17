@@ -33,6 +33,7 @@ eval = [
   "nltk>=3.8",
   "rouge-score>=0.1.2",
   "matplotlib>=3.7",
+  "pycocoevalcap>=1.2",
 ]
 colab = [
   "kagglehub>=0.2.8",

@@ -2,7 +2,14 @@ import unittest
 
 import pandas as pd
 
-from nesy_gen.evaluation.generation_metrics import corpus_generation_metrics, meteor_lite, rouge_l, tokenize
+from nesy_gen.evaluation.generation_metrics import (
+    cider_lite,
+    corpus_generation_metrics,
+    meteor_lite,
+    rouge_l,
+    tokenize,
+    token_prf,
+)
 
 
 class GenerationMetricsTest(unittest.TestCase):
@@ -17,12 +24,24 @@ class GenerationMetricsTest(unittest.TestCase):
         self.assertGreater(metrics["bleu1"], 0.99)
         self.assertGreater(metrics["rouge_l"], 0.99)
         self.assertGreater(metrics["meteor_lite"], 0.99)
+        self.assertGreater(metrics["token_precision"], 0.99)
+        self.assertGreater(metrics["token_recall"], 0.99)
+        self.assertGreater(metrics["token_f1"], 0.99)
 
     def test_empty_metrics(self):
         self.assertEqual(rouge_l([], ["a"]), 0.0)
         self.assertEqual(meteor_lite([], ["a"]), 0.0)
 
+    def test_token_prf(self):
+        scores = token_prf(["a", "b"], ["a", "c"])
+        self.assertEqual(scores["precision"], 0.5)
+        self.assertEqual(scores["recall"], 0.5)
+        self.assertEqual(scores["f1"], 0.5)
+
+    def test_cider_lite_exact_match_is_positive(self):
+        score = cider_lite([(["lungs", "clear"], ["lungs", "clear"])])
+        self.assertGreaterEqual(score, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
-

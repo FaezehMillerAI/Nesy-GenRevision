@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-target-length", type=int, default=160)
-    parser.add_argument("--visual-seq-len", type=int, default=512)
+    parser.add_argument("--visual-seq-len", type=int, default=128)
     parser.add_argument("--dropout-prob", type=float, default=0.1)
     parser.add_argument("--target-prefix", default="generate report: ")
     parser.add_argument("--seed", type=int, default=13)

@@ -109,8 +109,16 @@ def main() -> None:
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0.0
+        seen_examples = 0
         optimizer.zero_grad(set_to_none=True)
-        for step, batch in enumerate(tqdm(train_loader, desc=f"r2gen-t5 train epoch {epoch + 1}")):
+        train_progress = tqdm(
+            train_loader,
+            desc=f"train {epoch + 1}/{args.epochs}",
+            dynamic_ncols=True,
+            leave=True,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
+        )
+        for step, batch in enumerate(train_progress):
             images = batch["image"].to(device)
             labels = batch["labels"].to(device)
             with torch.cuda.amp.autocast(enabled=args.fp16 and device.type == "cuda"):
@@ -123,15 +131,39 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
             total_loss += loss.item() * args.gradient_accumulation_steps
+            seen_examples += len(batch["study_id"])
+            train_progress.set_postfix(
+                {
+                    "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
+                    "avg": f"{total_loss / (step + 1):.4f}",
+                    "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
+                    "seen": seen_examples,
+                    **_gpu_progress(torch, device),
+                }
+            )
 
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for batch in tqdm(val_loader, desc="r2gen-t5 validation"):
+            val_progress = tqdm(
+                val_loader,
+                desc=f"valid {epoch + 1}/{args.epochs}",
+                dynamic_ncols=True,
+                leave=True,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
+            )
+            for step, batch in enumerate(val_progress):
                 images = batch["image"].to(device)
                 labels = batch["labels"].to(device)
                 loss = model.forward(images, labels=labels).loss
                 val_loss += loss.item()
+                val_progress.set_postfix(
+                    {
+                        "loss": f"{loss.item():.4f}",
+                        "avg": f"{val_loss / (step + 1):.4f}",
+                        **_gpu_progress(torch, device),
+                    }
+                )
 
         row = {
             "epoch": epoch + 1,
@@ -146,6 +178,14 @@ def main() -> None:
     model.save_pretrained(out)
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
     print(f"Saved R2Gen-T5 checkpoint to {out}")
+
+
+def _gpu_progress(torch, device) -> dict[str, str]:
+    if getattr(device, "type", "") != "cuda" or not torch.cuda.is_available():
+        return {}
+    allocated = torch.cuda.memory_allocated(device) / (1024**3)
+    reserved = torch.cuda.memory_reserved(device) / (1024**3)
+    return {"gpu_gb": f"{allocated:.1f}/{reserved:.1f}"}
 
 
 if __name__ == "__main__":

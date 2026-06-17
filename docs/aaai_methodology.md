@@ -90,6 +90,12 @@ available at inference time, and \(A(c)\) is the consistency-gate acceptance
 signal. The candidate is still PrimeKG-audited; the stronger retrieval weight
 only makes the final selection more lexical-overlap friendly.
 
+Retrieval is decontaminated before candidate generation: training records with
+the same study identifier or an exact normalized reference-report duplicate are
+removed from the candidate pool. The reference report is never used as retrieval
+query text; it is used only to block exact duplicate contamination during
+evaluation.
+
 Report this profile alongside the balanced graph profile. If it reaches the
 BLEU target, the claim should be:
 

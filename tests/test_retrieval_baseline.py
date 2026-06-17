@@ -35,9 +35,25 @@ class RetrievalBaselineTest(unittest.TestCase):
         ]
         test = [RadiologyExample("te1", None, "", "Exact hidden reference.", "test")]
 
-        preds = run_tfidf_retrieval_topk(train, test, top_k=2)
+        preds = run_tfidf_retrieval_topk(
+            train,
+            test,
+            top_k=2,
+            exclude_reference_duplicates=False,
+        )
 
         self.assertEqual([prediction.similarity for prediction in preds[0]], [0.0, 0.0])
+
+    def test_retrieval_filters_exact_reference_duplicates(self):
+        train = [
+            RadiologyExample("tr1", None, "cough", "Exact hidden reference.", "train"),
+            RadiologyExample("tr2", None, "cough", "Different report.", "train"),
+        ]
+        test = [RadiologyExample("te1", None, "cough", "Exact hidden reference.", "test")]
+
+        preds = run_tfidf_retrieval_topk(train, test, top_k=2)
+
+        self.assertEqual([prediction.retrieved_study_id for prediction in preds[0]], ["tr2"])
 
 
 if __name__ == "__main__":

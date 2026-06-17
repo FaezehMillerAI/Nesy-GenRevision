@@ -23,10 +23,17 @@ class RetrievalPrediction:
 def run_tfidf_retrieval(
     train_examples: list[RadiologyExample],
     query_examples: list[RadiologyExample],
+    *,
+    exclude_reference_duplicates: bool = True,
 ) -> list[RetrievalPrediction]:
     return [
         predictions[0]
-        for predictions in run_tfidf_retrieval_topk(train_examples, query_examples, top_k=1)
+        for predictions in run_tfidf_retrieval_topk(
+            train_examples,
+            query_examples,
+            top_k=1,
+            exclude_reference_duplicates=exclude_reference_duplicates,
+        )
         if predictions
     ]
 
@@ -36,6 +43,7 @@ def run_tfidf_retrieval_topk(
     query_examples: list[RadiologyExample],
     *,
     top_k: int = 5,
+    exclude_reference_duplicates: bool = True,
 ) -> list[list[RetrievalPrediction]]:
     if not train_examples:
         raise ValueError("train_examples cannot be empty")
@@ -49,7 +57,16 @@ def run_tfidf_retrieval_topk(
     for row_idx, example in enumerate(query_examples):
         query_vector = _tfidf_vector(test_queries[row_idx], idf)
         scores = [_cosine(query_vector, train_vector) for train_vector in train_vectors]
-        ranked = sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)[:top_k]
+        blocked = _blocked_train_indices(
+            train_examples,
+            example,
+            exclude_reference_duplicates=exclude_reference_duplicates,
+        )
+        ranked = [
+            idx
+            for idx in sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)
+            if idx not in blocked
+        ][:top_k]
         predictions = []
         for rank, train_idx in enumerate(ranked, start=1):
             retrieved = train_examples[train_idx]
@@ -81,6 +98,36 @@ def _query_text(example: RadiologyExample) -> str:
 
     text = f"{example.indication} {example.metadata.get('problems', '')} {example.metadata.get('mesh', '')}"
     return " ".join(text.split())
+
+
+def _blocked_train_indices(
+    train_examples: list[RadiologyExample],
+    query: RadiologyExample,
+    *,
+    exclude_reference_duplicates: bool,
+) -> set[int]:
+    """Remove obvious split contamination from retrieval candidates.
+
+    The query report is never used to build the retrieval query.  We only use it
+    here as an evaluation-time decontamination guard: if an identical report or
+    identical study identifier appears in the training pool, it should not be
+    available as a retrieved candidate because it can inflate lexical metrics.
+    """
+
+    query_report = _normalize_report(query.report)
+    blocked: set[int] = set()
+    for idx, train in enumerate(train_examples):
+        if train.study_id == query.study_id:
+            blocked.add(idx)
+            continue
+        if exclude_reference_duplicates and query_report:
+            if _normalize_report(train.report) == query_report:
+                blocked.add(idx)
+    return blocked
+
+
+def _normalize_report(text: str) -> str:
+    return " ".join(TOKEN_RE.findall(str(text).lower()))
 
 
 def _tokens(text: str) -> list[str]:

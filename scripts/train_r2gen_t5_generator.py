@@ -70,7 +70,12 @@ def main() -> None:
         choices=["reference", "indication_reference"],
         default="indication_reference",
     )
-    parser.add_argument("--fp16", action="store_true")
+    parser.add_argument("--fp16", action="store_true", help="Mixed-precision with float16 + GradScaler.")
+    parser.add_argument(
+        "--bf16",
+        action="store_true",
+        help="Mixed-precision with bfloat16 (recommended on A100 — no GradScaler needed, more stable).",
+    )
     parser.add_argument(
         "--backbone-learning-rate",
         type=float,
@@ -80,6 +85,17 @@ def main() -> None:
             "Typical value: 1/10 of --learning-rate (e.g. 5e-6 when LR=5e-5). "
             "When omitted the backbone uses the same LR as the rest of the model."
         ),
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="DataLoader worker processes for parallel image loading (0 = main thread only).",
+    )
+    parser.add_argument(
+        "--compile-model",
+        action="store_true",
+        help="Apply torch.compile to the T5 decoder (PyTorch >= 2.0, ~20%% faster on A100).",
     )
     args = parser.parse_args()
 
@@ -114,6 +130,32 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
+    # Mixed-precision setup: BF16 preferred on A100 (no scaler), FP16 elsewhere.
+    use_bf16 = args.bf16 and device.type == "cuda"
+    use_fp16 = args.fp16 and not use_bf16 and device.type == "cuda"
+    amp_enabled = use_bf16 or use_fp16
+    amp_dtype = torch.bfloat16 if use_bf16 else torch.float16
+    print(
+        f"AMP: {'bf16' if use_bf16 else 'fp16' if use_fp16 else 'disabled'} "
+        f"| device: {device}",
+        flush=True,
+    )
+
+    if args.compile_model:
+        if hasattr(torch, "compile"):
+            model.text_model = torch.compile(model.text_model, mode="reduce-overhead")
+            print("torch.compile applied to text model (mode=reduce-overhead).", flush=True)
+        else:
+            print("torch.compile not available (PyTorch < 2.0), skipping.", flush=True)
+
+    pin = device.type == "cuda"
+    num_workers = args.num_workers
+    loader_kwargs = dict(
+        num_workers=num_workers,
+        pin_memory=pin,
+        prefetch_factor=2 if num_workers > 0 else None,
+        persistent_workers=num_workers > 0,
+    )
     train_loader = DataLoader(
         R2GenT5Dataset(
             train_examples,
@@ -125,6 +167,7 @@ def main() -> None:
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=collate_r2gen_t5_batch,
+        **loader_kwargs,
     )
     val_loader = DataLoader(
         R2GenT5Dataset(
@@ -137,6 +180,7 @@ def main() -> None:
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=collate_r2gen_t5_batch,
+        **loader_kwargs,
     )
 
     backbone_lr = args.backbone_learning_rate
@@ -177,7 +221,8 @@ def main() -> None:
         num_warmup_steps=max(1, int(0.05 * total_steps)),
         num_training_steps=total_steps,
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=args.fp16 and device.type == "cuda")
+    # GradScaler only for FP16 (BF16 has enough dynamic range — no overflow)
+    scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
     graph_loss_helper = _build_graph_loss_helper(args, model)
     if graph_loss_helper is None:
         print("Graph-aware training: disabled. Training plain R2Gen-T5.", flush=True)
@@ -207,7 +252,7 @@ def main() -> None:
         for step, batch in enumerate(train_progress):
             images = batch["image"].to(device)
             labels = batch["labels"].to(device)
-            with torch.cuda.amp.autocast(enabled=args.fp16 and device.type == "cuda"):
+            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
                 outputs = model.forward(images, labels=labels)
                 generation_loss = outputs.loss
                 graph_loss, graph_metrics = _graph_training_loss(
@@ -248,7 +293,7 @@ def main() -> None:
 
         model.eval()
         val_loss = 0.0
-        with torch.no_grad():
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
             val_progress = _progress_iter(
                 val_loader,
                 desc=f"valid {epoch + 1}/{args.epochs}",

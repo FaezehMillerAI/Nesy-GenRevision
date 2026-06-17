@@ -75,7 +75,7 @@ class RagGenerationTest(unittest.TestCase):
             example,
             [
                 RagCandidate("retrieval", 1, "bad but retrieved report", 0.95, "tr1"),
-                RagCandidate("r2gen_t5", 1, "good generated report", 0.30, ""),
+                RagCandidate("vision_t5", 1, "good generated report", 0.30, ""),
             ],
             selection_objective="hybrid",
             graph_score_weight=0.10,

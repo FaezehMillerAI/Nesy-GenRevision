@@ -19,6 +19,21 @@ class R2GenT5ConfigTest(unittest.TestCase):
             loaded = load_r2gen_t5_config(path)
 
             self.assertEqual(loaded.text_model_name, "toy/t5")
+            self.assertEqual(loaded.visual_backbone, "resnet101")
+            self.assertFalse(loaded.freeze_visual_encoder)
+
+    def test_load_legacy_config_defaults_new_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "r2gen_t5_config.json"
+            path.write_text(
+                '{"text_model_name": "toy/t5", "tokenizer_name": "toy/t5"}',
+                encoding="utf-8",
+            )
+
+            loaded = load_r2gen_t5_config(path)
+
+            self.assertEqual(loaded.text_model_name, "toy/t5")
+            self.assertEqual(loaded.image_size, 224)
 
     def test_clean_prediction_removes_prefix(self):
         cleaned = clean_r2gen_prediction("generate report: lungs are clear.")

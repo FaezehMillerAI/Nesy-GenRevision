@@ -192,7 +192,8 @@ class R2GenT5Model:
         torch = deps["torch"]
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        self.text_model.save_pretrained(out / "text_model")
+        text_model_to_save = getattr(self.text_model, "_orig_mod", self.text_model)
+        text_model_to_save.save_pretrained(out / "text_model")
         self.tokenizer.save_pretrained(out / "tokenizer")
         torch.save(self.visual_extractor.state_dict(), out / "visual_extractor.pt")
         torch.save(self.visual_projection.state_dict(), out / "visual_projection.pt")
@@ -211,11 +212,18 @@ class R2GenT5Model:
         model.text_model = T5ForConditionalGeneration.from_pretrained(checkpoint / "text_model")
         model.tokenizer = AutoTokenizer.from_pretrained(checkpoint / "tokenizer")
         extractor_state = torch.load(checkpoint / "visual_extractor.pt", map_location="cpu")
-        model.visual_extractor.load_state_dict(extractor_state)
+        _load_visual_extractor_state(model, extractor_state, checkpoint)
         proj_path = checkpoint / "visual_projection.pt"
         if proj_path.exists():
             proj_state = torch.load(proj_path, map_location="cpu")
             model.visual_projection.load_state_dict(proj_state)
+        elif _load_legacy_projection_state(model, extractor_state):
+            warnings.warn(
+                f"Loaded legacy projection weights from visual_extractor.pt in {checkpoint}. "
+                "Retraining is still recommended for spatial patch features.",
+                UserWarning,
+                stacklevel=2,
+            )
         else:
             warnings.warn(
                 f"No visual_projection.pt found in {checkpoint}. "
@@ -225,6 +233,60 @@ class R2GenT5Model:
                 stacklevel=2,
             )
         return model
+
+
+def _load_visual_extractor_state(model, extractor_state: dict, checkpoint: Path) -> None:
+    try:
+        model.visual_extractor.load_state_dict(extractor_state)
+        return
+    except RuntimeError as exc:
+        legacy_state = _legacy_resnet_state_for_spatial_extractor(extractor_state)
+        if legacy_state:
+            missing, unexpected = model.visual_extractor.load_state_dict(legacy_state, strict=False)
+            warnings.warn(
+                (
+                    f"Loaded legacy global-pool ResNet checkpoint from {checkpoint} into the "
+                    f"spatial visual extractor with missing={len(missing)}, unexpected={len(unexpected)}. "
+                    "Retraining is recommended before using this checkpoint for final experiments."
+                ),
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+        raise RuntimeError(
+            f"Could not load visual_extractor.pt from {checkpoint}. "
+            "The checkpoint may use an incompatible visual backbone. Retrain the Vision-T5 checkpoint."
+        ) from exc
+
+
+def _legacy_resnet_state_for_spatial_extractor(state: dict) -> dict[str, object]:
+    prefixes = {
+        "conv1.": "backbone.0.",
+        "bn1.": "backbone.1.",
+        "layer1.": "backbone.4.",
+        "layer2.": "backbone.5.",
+        "layer3.": "backbone.6.",
+        "layer4.": "backbone.7.",
+    }
+    converted = {}
+    for key, value in state.items():
+        for old, new in prefixes.items():
+            if key.startswith(old):
+                converted[f"{new}{key[len(old):]}"] = value
+                break
+    return converted
+
+
+def _load_legacy_projection_state(model, extractor_state: dict) -> bool:
+    if "fc.weight" not in extractor_state or "fc.bias" not in extractor_state:
+        return False
+    try:
+        model.visual_projection.load_state_dict(
+            {"weight": extractor_state["fc.weight"], "bias": extractor_state["fc.bias"]}
+        )
+        return True
+    except RuntimeError:
+        return False
 
 
 def _build_visual_extractor(models, nn, visual_backbone: str, output_dim: int):

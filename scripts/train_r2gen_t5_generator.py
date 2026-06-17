@@ -153,9 +153,9 @@ def main() -> None:
     loader_kwargs = dict(
         num_workers=num_workers,
         pin_memory=pin,
-        prefetch_factor=2 if num_workers > 0 else None,
-        persistent_workers=num_workers > 0,
     )
+    if num_workers > 0:
+        loader_kwargs.update(prefetch_factor=2, persistent_workers=True)
     train_loader = DataLoader(
         R2GenT5Dataset(
             train_examples,

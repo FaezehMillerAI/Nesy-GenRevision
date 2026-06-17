@@ -38,17 +38,18 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--retrieval-top-k", type=int, default=5)
-    parser.add_argument("--r2gen-checkpoint-dir")
-    parser.add_argument("--r2gen-num-candidates", type=int, default=0)
+    parser.add_argument("--r2gen-checkpoint-dir", dest="generator_checkpoint_dir")
+    parser.add_argument("--generator-checkpoint-dir", dest="generator_checkpoint_dir")
+    parser.add_argument("--r2gen-num-candidates", "--generator-num-candidates", dest="generator_num_candidates", type=int, default=0)
     parser.add_argument("--generated-evidence-score", type=float, default=0.50)
-    parser.add_argument("--r2gen-num-beams", type=int, default=6)
-    parser.add_argument("--r2gen-batch-size", type=int, default=2)
+    parser.add_argument("--r2gen-num-beams", "--generator-num-beams", dest="generator_num_beams", type=int, default=6)
+    parser.add_argument("--r2gen-batch-size", "--generator-batch-size", dest="generator_batch_size", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=120)
     parser.add_argument(
         "--decoding-mode",
         choices=["standard", "graph_constrained"],
         default="standard",
-        help="Use standard R2Gen decoding or soft PrimeKG-constrained decoding.",
+        help="Use standard Vision-T5 decoding or soft PrimeKG-constrained decoding.",
     )
     parser.add_argument("--graph-token-boost", type=float, default=2.0)
     parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
@@ -84,14 +85,14 @@ def main() -> None:
     print("Building retrieval candidates...", flush=True)
     candidate_map = retrieval_candidates(train, queries, top_k=args.retrieval_top_k)
 
-    if args.r2gen_checkpoint_dir and args.r2gen_num_candidates > 0:
-        print("Adding R2Gen-T5 generated candidates...", flush=True)
+    if args.generator_checkpoint_dir and args.generator_num_candidates > 0:
+        print("Adding Vision-T5 generated candidates...", flush=True)
         generated_map = generate_r2gen_candidates(
-            args.r2gen_checkpoint_dir,
+            args.generator_checkpoint_dir,
             queries,
-            batch_size=args.r2gen_batch_size,
-            num_candidates=args.r2gen_num_candidates,
-            num_beams=args.r2gen_num_beams,
+            batch_size=args.generator_batch_size,
+            num_candidates=args.generator_num_candidates,
+            num_beams=args.generator_num_beams,
             max_new_tokens=args.max_new_tokens,
             decoding_mode=args.decoding_mode,
             primekg_dir=args.primekg_dir,
@@ -195,7 +196,7 @@ def generate_r2gen_candidates(
     )
     rows: dict[str, list[RagCandidate]] = {}
     with torch.no_grad():
-        for batch in tqdm(loader, desc="R2Gen-T5 RAG candidates"):
+        for batch in tqdm(loader, desc="Vision-T5 RAG candidates"):
             logits_processor = None
             if constraint_builder is not None:
                 evidence_texts = [
@@ -231,7 +232,7 @@ def generate_r2gen_candidates(
                 end = start + num_candidates
                 rows[study_id] = [
                     RagCandidate(
-                        source="r2gen_t5",
+                        source="vision_t5",
                         source_rank=rank,
                         prediction=prediction,
                         evidence_score=generated_evidence_score,

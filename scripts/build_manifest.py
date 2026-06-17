@@ -18,7 +18,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build dataset JSONL manifests.")
     parser.add_argument(
         "--dataset",
-        choices=["iuxray", "r2gen_iuxray", "mimic_aug", "generic_csv"],
+        choices=["iuxray", "iuxray_official", "r2gen_iuxray", "mimic_aug", "generic_csv"],
         required=True,
     )
     parser.add_argument("--data-root", required=True)
@@ -34,7 +34,7 @@ def main() -> None:
 
     if args.dataset == "iuxray":
         examples = build_iuxray_manifest(args.data_root, args.output, seed=args.seed)
-    elif args.dataset == "r2gen_iuxray":
+    elif args.dataset in {"iuxray_official", "r2gen_iuxray"}:
         examples = build_r2gen_iuxray_manifest(args.data_root, args.output)
     elif args.dataset == "mimic_aug":
         examples = build_mimic_aug_manifest(args.data_root, args.output, seed=args.seed)

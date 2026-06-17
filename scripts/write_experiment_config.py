@@ -8,19 +8,24 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser(description="Write a reproducible experiment config JSON.")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--dataset", choices=["r2gen_iuxray", "iuxray", "mimic_aug"], required=True)
+    parser.add_argument(
+        "--dataset",
+        choices=["iuxray_official", "r2gen_iuxray", "iuxray", "mimic_aug"],
+        required=True,
+    )
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--primekg-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--run-name", required=True)
     parser.add_argument(
         "--generator",
-        choices=["retrieval", "r2gen_t5", "rag_primekg", "rag_primekg_constrained"],
+        choices=["retrieval", "vision_t5", "r2gen_t5", "rag_primekg", "rag_primekg_constrained"],
         default="rag_primekg",
     )
-    parser.add_argument("--r2gen-checkpoint-dir")
+    parser.add_argument("--r2gen-checkpoint-dir", dest="generator_checkpoint_dir")
+    parser.add_argument("--generator-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--retrieval-top-k", type=int, default=5)
-    parser.add_argument("--r2gen-num-candidates", type=int, default=4)
+    parser.add_argument("--r2gen-num-candidates", "--generator-num-candidates", dest="generator_num_candidates", type=int, default=4)
     parser.add_argument(
         "--decoding-mode",
         choices=["standard", "graph_constrained"],
@@ -54,9 +59,9 @@ def main() -> None:
         "output_dir": args.output_dir,
         "run_name": args.run_name,
         "generator": args.generator,
-        "r2gen_checkpoint_dir": args.r2gen_checkpoint_dir,
+        "generator_checkpoint_dir": args.generator_checkpoint_dir,
         "retrieval_top_k": args.retrieval_top_k,
-        "r2gen_num_candidates": args.r2gen_num_candidates,
+        "generator_num_candidates": args.generator_num_candidates,
         "decoding_mode": args.decoding_mode,
         "graph_token_boost": args.graph_token_boost,
         "unsupported_token_penalty": args.unsupported_token_penalty,
@@ -70,10 +75,11 @@ def main() -> None:
         "subgraph_strategy": args.subgraph_strategy,
         "official_metrics": args.official_metrics,
         "methods": {
-            "rag_primekg": "retrieval candidates + optional R2Gen-T5 candidates + PrimeKG LTN audit + consistency gate",
-            "rag_primekg_constrained": "RAG evidence + soft PrimeKG-constrained R2Gen-T5 decoding + LTN audit + consistency gate",
-            "primekg_token_training": "optional R2Gen-T5 training regularizer that upweights PrimeKG-linked entity tokens in references",
-            "r2gen_t5": "raw image-to-report generator",
+            "rag_primekg": "retrieval candidates + optional Vision-T5 candidates + PrimeKG LTN audit + consistency gate",
+            "rag_primekg_constrained": "RAG evidence + soft PrimeKG-constrained Vision-T5 decoding + LTN audit + consistency gate",
+            "primekg_token_training": "optional Vision-T5 training regularizer that upweights PrimeKG-linked entity tokens in references",
+            "vision_t5": "raw image-to-report generator",
+            "r2gen_t5": "deprecated alias for the raw image-to-report generator",
             "retrieval": "TF-IDF retrieval baseline",
         },
         "reviewer_coverage": [

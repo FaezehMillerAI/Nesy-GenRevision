@@ -20,7 +20,7 @@ from nesy_gen.models.r2gen_t5 import (
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate reports with an R2Gen-style ResNet101 + T5 model.")
+    parser = argparse.ArgumentParser(description="Generate reports with the Vision-T5 image-to-report model.")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--checkpoint-dir", required=True)
     parser.add_argument("--output-csv", required=True)
@@ -68,7 +68,7 @@ def main() -> None:
     references = {example.study_id: example.report for example in examples}
     rows = []
     with torch.no_grad():
-        for batch in tqdm(loader, desc="r2gen-t5 generate"):
+        for batch in tqdm(loader, desc="Vision-T5 generate"):
             generated = model.generate(
                 batch["image"].to(device),
                 max_new_tokens=args.max_new_tokens,
@@ -101,7 +101,7 @@ def main() -> None:
     out = Path(args.output_csv)
     out.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out, index=False)
-    print(f"Saved {len(rows)} R2Gen-T5 predictions to {out}")
+    print(f"Saved {len(rows)} Vision-T5 predictions to {out}")
 
 
 if __name__ == "__main__":

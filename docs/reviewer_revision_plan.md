@@ -1,32 +1,74 @@
-# Reviewer-Driven Revision Plan
+# Reviewer-Driven AAAI Revision Plan
 
-## Methodology Fixes Implemented in Code
+This tracker summarizes how the implementation addresses the main weaknesses in
+the earlier manuscript and what evidence is still needed for a solid AAAI
+submission.
 
-- Reproducible package structure with installable modules, tests, scripts, and a
-  Colab notebook.
-- PrimeKG loader with graph coverage reporting for missing entities.
-- Swappable entity-linking interface so scispaCy can be compared with RadGraph,
-  CheXbert, RaTEScore, or a deterministic lexical crosswalk.
-- Temporal Steiner-style patient subgraph builder using relation and temporal
-  weights from the manuscript.
-- LTN-style fuzzy clause satisfaction for biological/temporal validity,
-  finding-diagnosis connectivity, and `located_in` type constraints.
-- Consistency gate over graph validity, visual grounding, NLI entailment, and
-  hallucination risk.
-- Sensitivity analysis for dropped and swapped entity links.
-- Latency and model-size utilities for computational overhead reporting.
+## Addressed In Code
 
-## Manuscript Revisions Needed for EACL
+| Reviewer concern | Current implementation |
+| --- | --- |
+| Reproducibility unclear | Installable package, tests, scripts, and Colab notebooks |
+| Real PrimeKG use unclear | Dataverse loader plus reusable radiology PrimeKG cache |
+| Entity linking not validated | Entity-linking validation bundle with raw/filtered links, coverage, frequencies, and manual audit sample |
+| Graph reasoning too abstract | PrimeKG subgraph builder, LTN-style clause scores, and candidate audit CSVs |
+| No robustness analysis | Sensitivity tools for dropped/swapped links and graph coverage |
+| No latency/accounting | Profiling utilities and candidate audit outputs |
+| Generation not evaluated enough | Lexical metrics, clinical proxy metrics, official metric adapters, leakage audit |
+| Hallucination claims too broad | Claims reframed as unsupported entity/clinical-label proxy measurements |
 
-- Correct title typo: `Graph-Verfied` -> `Graph-Verified`.
-- Narrow unsupported "state-of-the-art" wording unless direct comparisons with
-  R2GenKG, MAIRA-2, CXR-LLaVA, CXR-Mate, and GraphRAG-style baselines are added.
-- Add a direct factuality section: hallucination rate, RadGraph/RaTEScore-style
-  metrics, and radiologist review if feasible.
-- Add entity-linking validation and error-propagation sensitivity tables.
-- Add inference latency, GPU memory, parameter count, and per-module cost.
-- Reframe the method as graph-verified generation related to GraphRAG, then
-  clarify what is ante-hoc verification versus retrieval-only augmentation.
-- Replace non-standard `[?]` and `[!]` token labels in Figure 2 with clearer
-  labels such as `FLAGGED` and `REJECTED/UNCERTAIN`.
+## Proposed AAAI Method Framing
 
+Nesy-Gen should be presented as an improved neuro-symbolic generation framework,
+not as a new backbone architecture. The image-to-report generator is a component;
+the contribution is the graph-grounded verification and selection layer:
+
+1. Vision-T5 candidate report generation.
+2. Retrieval of leakage-safe clinical evidence.
+3. PrimeKG entity grounding and radiology subgraph construction.
+4. LTN-style fuzzy graph verification.
+5. Consistency-gated final report selection.
+6. Optional graph-aware training and soft graph-constrained decoding.
+
+## Remaining Evidence Needed
+
+| Evidence | Why it matters | Status |
+| --- | --- | --- |
+| Full IU-Xray standard vs graph-constrained run | Main proof that the method helps beyond smoke runs | Needed |
+| Full MIMIC-CXR run | External dataset evidence | Needed |
+| Retrieval-only baseline | Shows graph method is not just retrieval | Needed |
+| Vision-T5 without graph gate | Isolates graph contribution | Needed |
+| Official CheXbert/CheXpert results | Clinical label validity | Needed |
+| Official RadGraph results | Entity/relation factuality | Needed |
+| Manual entity-linking audit | Validates the graph grounding input | Needed |
+| Template repetition/diversity table | Guards against artificially high BLEU from repeated reports | Needed |
+| Candidate-level qualitative examples | Makes ante-hoc verification visible to reviewers | Needed |
+
+## Recommended Claim Boundary
+
+Use:
+
+> Nesy-Gen improves graph-grounded explainability and reduces unsupported
+> entity generation under reference-anchored clinical/entity metrics.
+
+Avoid:
+
+> Nesy-Gen eliminates hallucination.
+
+The latter requires radiologist adjudication or a stronger factuality benchmark
+than automated reference proxies alone.
+
+## Main Experiments To Run
+
+For both IU-Xray and MIMIC-CXR:
+
+1. Retrieval baseline.
+2. Vision-T5 generator without PrimeKG verification.
+3. RAG + Vision-T5 without graph-constrained decoding.
+4. RAG + PrimeKG/LTN consistency gate.
+5. RAG + PrimeKG/LTN gate + graph-constrained decoding.
+6. Optional graph-aware training ablation.
+
+The final tables should include lexical metrics, official clinical metrics,
+entity-level unsupported content proxies, graph satisfaction, diversity, latency,
+and qualitative examples.

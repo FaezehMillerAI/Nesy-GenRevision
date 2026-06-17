@@ -32,7 +32,7 @@ from nesy_gen.models.r2gen_t5 import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate R2Gen-T5 candidates and select final reports with PrimeKG verification."
+        description="Generate Vision-T5 candidates and select final reports with PrimeKG verification."
     )
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--checkpoint-dir", required=True)
@@ -97,7 +97,7 @@ def main() -> None:
     candidate_rows: list[dict[str, object]] = []
 
     with torch.no_grad():
-        for batch in tqdm(loader, desc="r2gen-t5 candidates + PrimeKG verify"):
+        for batch in tqdm(loader, desc="Vision-T5 candidates + PrimeKG verify"):
             generated = model.generate(
                 batch["image"].to(device),
                 max_new_tokens=args.max_new_tokens,
@@ -176,8 +176,8 @@ def main() -> None:
     candidates_out.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(selected_rows).to_csv(selected_out, index=False)
     pd.DataFrame(candidate_rows).to_csv(candidates_out, index=False)
-    print(f"Saved {len(selected_rows)} graph-verified R2Gen-T5 predictions to {selected_out}")
-    print(f"Saved {len(candidate_rows)} R2Gen-T5 candidate audit rows to {candidates_out}")
+    print(f"Saved {len(selected_rows)} graph-verified Vision-T5 predictions to {selected_out}")
+    print(f"Saved {len(candidate_rows)} Vision-T5 candidate audit rows to {candidates_out}")
 
 
 def build_primekg_pipeline(

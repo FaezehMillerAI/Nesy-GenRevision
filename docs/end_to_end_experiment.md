@@ -1,7 +1,22 @@
 # End-to-End Experiment Pipeline
 
-This is the paper-grade run path for reviewer-facing evidence. It replaces
-manual notebook state with reproducible scripts.
+This document keeps the script-level commands for reproducibility and ablation
+work. For normal AAAI experiments, start with the simplified Colab notebook:
+
+```text
+notebooks/AAAI_NesyGen_Simple_Colab.ipynb
+```
+
+That notebook runs the current recommended path:
+
+```text
+manifest -> radiology PrimeKG cache -> entity-linking validation ->
+frozen-vision Vision-T5 training -> RAG + PrimeKG/LTN consistency gate ->
+evaluation -> leakage audit -> official metric input export
+```
+
+Use the commands below when you need to debug or run a specific module outside
+the notebook.
 
 ## 1. Setup
 
@@ -146,7 +161,7 @@ python scripts/compare_generation_systems.py \
   --system retrieval /content/drive/MyDrive/iuxray_dynamic_graph_outputs/flan_t5_small_run1/iuxray_retrieval_baseline_test.csv
 ```
 
-Stronger BLIP fine-tuning path:
+Optional legacy BLIP fine-tuning baseline:
 
 ```bash
 python scripts/train_blip_report_generator.py \

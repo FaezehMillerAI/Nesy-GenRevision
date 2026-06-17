@@ -50,12 +50,16 @@ def require_r2gen_t5_dependencies():
 
 
 class R2GenT5Model:
-    """R2Gen-style visual encoder plus T5 decoder.
+    """Vision-T5 image-to-report generator.
 
     The visual backbone produces a spatial feature map (e.g. 7×7 = 49 patch
     tokens for a 224×224 input).  Those patch tokens are projected into T5's
     encoder hidden size and used as the encoder sequence, so T5 cross-attention
     can attend to different image regions when generating each report token.
+
+    The class name is retained for checkpoint compatibility with earlier
+    experiments; paper-facing text should call this component the Vision-T5
+    generator.
     """
 
     def __init__(self, config: R2GenT5Config):

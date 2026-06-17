@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nesy-Gen EACL Revision Research Brief</title>
+  <title>Nesy-Gen AAAI Research Brief</title>
   <style>
     :root {
       --ink: #172026;
@@ -312,7 +312,7 @@
 </head>
 <body>
   <header>
-    <h1>Nesy-Gen EACL Revision Research Brief</h1>
+    <h1>Nesy-Gen AAAI Research Brief</h1>
     <p class="subtitle">
       A discussion-ready summary of the graph-verified radiology report generation revision:
       reviewer concerns, implemented evidence, open risks, key terms, and next milestones.
@@ -320,7 +320,7 @@
     <div class="meta">
       <span class="pill blue">IU-Xray pipeline active</span>
       <span class="pill green">Real PrimeKG integrated</span>
-      <span class="pill amber">BLIP training in progress</span>
+      <span class="pill amber">Vision-T5 training in progress</span>
       <span class="pill amber">MIMIC-CXR pending full run</span>
     </div>
   </header>
@@ -336,8 +336,8 @@
         </p>
         <p>
           The graph-verification side is now credible and testable. The main remaining scientific risk is
-          generation quality: the first Swin-tiny plus DistilGPT2 model is weak, retrieval is factually
-          stronger, and the current BLIP/stronger-model run will determine the next paper framing.
+          generation quality: the first Swin-tiny plus DistilGPT2 model was weak, retrieval is factually
+          stronger, and the current Vision-T5/Nesy-Gen run will determine the next paper framing.
         </p>
       </div>
     </section>
@@ -425,8 +425,8 @@
       <div class="card span-4">
         <h3>Immediate Decision</h3>
         <ul>
-          <li>If BLIP improves: keep generation-centered framing.</li>
-          <li>If BLIP remains weak: pivot to graph-verified retrieval/hybrid generation.</li>
+          <li>If Vision-T5 improves: keep generation-centered framing with graph verification.</li>
+          <li>If Vision-T5 remains weak: pivot toward graph-verified retrieval/hybrid generation.</li>
           <li>Avoid unsupported SOTA claims either way.</li>
         </ul>
       </div>
@@ -483,9 +483,9 @@
             </tr>
             <tr>
               <td>Baselines missing</td>
-              <td>TF-IDF retrieval, Swin/GPT2, BLIP, comparison script.</td>
+              <td>TF-IDF retrieval, legacy neural baselines, Vision-T5/Nesy-Gen, comparison script.</td>
               <td><span class="pill amber">In progress</span></td>
-              <td><code>run_retrieval_baseline.py</code>, BLIP scripts.</td>
+              <td><code>run_retrieval_baseline.py</code>, Vision-T5 and RAG/PrimeKG scripts.</td>
             </tr>
             <tr>
               <td>Runtime missing</td>
@@ -561,7 +561,7 @@
       <h2>Generation and Factuality Status</h2>
       <p>
         The first neural generator is not strong enough to carry the paper. Retrieval is currently more
-        factually reliable, and the BLIP run is testing whether a stronger pretrained image-language model
+        factually reliable, and the Vision-T5 run is testing whether a stronger pretrained image-language model
         can improve the generation side.
       </p>
       <div class="table-wrap">
@@ -588,7 +588,7 @@
               <td><span class="pill green">Factually stronger baseline</span></td>
             </tr>
             <tr>
-              <td>BLIP image-captioning baseline</td>
+              <td>Vision-T5 generator</td>
               <td>Still training/evaluating.</td>
               <td>This decides whether a stronger neural generator can become the main system.</td>
               <td><span class="pill amber">Training now</span></td>
@@ -597,7 +597,7 @@
               <td>Graph-verified hybrid system</td>
               <td>Not finalized yet.</td>
               <td>Likely fallback if pure generation remains weak.</td>
-              <td><span class="pill blue">Best fallback if BLIP weak</span></td>
+              <td><span class="pill blue">Best fallback if Vision-T5 weak</span></td>
             </tr>
           </tbody>
         </table>
@@ -651,13 +651,13 @@
               <td>6</td>
               <td>Neural generation</td>
               <td><span class="pill amber">In progress</span></td>
-              <td>Finish BLIP training and evaluation.</td>
+              <td>Finish Vision-T5 training and evaluation.</td>
             </tr>
             <tr>
               <td>7</td>
               <td>Baseline comparison</td>
               <td><span class="pill amber">In progress</span></td>
-              <td>Compare BLIP, retrieval, and Swin/GPT2.</td>
+              <td>Compare Vision-T5, retrieval, and graph-constrained Nesy-Gen.</td>
             </tr>
             <tr>
               <td>8</td>
@@ -686,10 +686,10 @@
       <div class="card warning span-6">
         <h2>Discussion Points</h2>
         <ol>
-          <li>Should the paper remain generation-centered if BLIP improves?</li>
+          <li>Should the paper remain generation-centered if Vision-T5 improves?</li>
           <li>Should we pivot toward graph-verified factuality and retrieval-augmented generation?</li>
           <li>How much effort should go into MIMIC-CXR before manuscript rewriting begins?</li>
-          <li>Do we need official RadGraph or CheXbert evaluation for EACL credibility?</li>
+          <li>Do we need official RadGraph or CheXbert evaluation for AAAI credibility?</li>
           <li>Which claims should be simplified or narrowed before resubmission?</li>
         </ol>
       </div>
@@ -700,7 +700,7 @@
           <li>The current hallucination metric is entity-level proxy evidence, not radiologist review.</li>
           <li>The bio-temporal graph component needs more care.</li>
           <li>MIMIC-CXR is supported in code but still needs full execution.</li>
-          <li>GitHub push of the latest cache resolver needs valid authentication.</li>
+          <li>Full MIMIC-CXR execution and official metric outputs are still pending.</li>
         </ul>
       </div>
     </section>
@@ -719,12 +719,12 @@
           <tbody>
             <tr>
               <td>1</td>
-              <td>Finish BLIP run and evaluate metrics.</td>
+              <td>Finish Vision-T5 run and evaluate metrics.</td>
               <td>Determines whether generation quality is salvageable with a stronger pretrained model.</td>
             </tr>
             <tr>
               <td>2</td>
-              <td>Compare BLIP vs retrieval vs Swin/GPT2.</td>
+              <td>Compare Vision-T5, retrieval, and graph-constrained Nesy-Gen.</td>
               <td>Creates a defensible baseline table for the manuscript.</td>
             </tr>
             <tr>

@@ -59,7 +59,7 @@ def main() -> None:
         "--graph-training-mode",
         choices=["none", "primekg_token"],
         default="none",
-        help="Optional graph-aware training. Default keeps plain R2Gen-T5 intact.",
+        help="Optional graph-aware training. Default keeps plain Vision-T5 intact.",
     )
     parser.add_argument("--graph-loss-nodes-csv")
     parser.add_argument("--graph-token-loss-weight", type=float, default=0.0)
@@ -225,7 +225,7 @@ def main() -> None:
     scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
     graph_loss_helper = _build_graph_loss_helper(args, model)
     if graph_loss_helper is None:
-        print("Graph-aware training: disabled. Training plain R2Gen-T5.", flush=True)
+        print("Graph-aware training: disabled. Training plain Vision-T5.", flush=True)
     else:
         print(
             (
@@ -343,7 +343,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out)
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    print(f"Saved R2Gen-T5 checkpoint to {out}")
+    print(f"Saved Vision-T5 checkpoint to {out}")
 
 
 def _build_graph_loss_helper(args, model):

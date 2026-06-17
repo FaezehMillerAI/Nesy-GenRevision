@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+from tqdm.auto import tqdm
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from nesy_gen.data.schema import load_jsonl
+from nesy_gen.models.r2gen_t5 import (
+    R2GenT5Config,
+    R2GenT5Dataset,
+    R2GenT5Model,
+    collate_r2gen_t5_batch,
+    require_r2gen_t5_dependencies,
+)
+from nesy_gen.utils.seed import seed_everything
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train an R2Gen-style ResNet101 + T5 report generator.")
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--text-model-name", default="t5-small")
+    parser.add_argument("--tokenizer-name", default="t5-small")
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument("--learning-rate", type=float, default=1e-4)
+    parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--max-target-length", type=int, default=160)
+    parser.add_argument("--visual-seq-len", type=int, default=512)
+    parser.add_argument("--dropout-prob", type=float, default=0.1)
+    parser.add_argument("--target-prefix", default="generate report: ")
+    parser.add_argument("--seed", type=int, default=13)
+    parser.add_argument("--max-train-examples", type=int)
+    parser.add_argument("--max-val-examples", type=int)
+    parser.add_argument("--fp16", action="store_true")
+    args = parser.parse_args()
+
+    seed_everything(args.seed)
+    deps = require_r2gen_t5_dependencies()
+    torch = deps["torch"]
+    DataLoader = deps["DataLoader"]
+    get_linear_schedule_with_warmup = deps["get_linear_schedule_with_warmup"]
+
+    examples = load_jsonl(args.manifest)
+    train_examples = [example for example in examples if example.split == "train" and example.image_path]
+    val_examples = [example for example in examples if example.split == "val" and example.image_path]
+    if args.max_train_examples:
+        train_examples = train_examples[: args.max_train_examples]
+    if args.max_val_examples:
+        val_examples = val_examples[: args.max_val_examples]
+    if not train_examples or not val_examples:
+        raise ValueError("Need non-empty train and val examples with image paths.")
+
+    config = R2GenT5Config(
+        text_model_name=args.text_model_name,
+        tokenizer_name=args.tokenizer_name,
+        max_target_length=args.max_target_length,
+        visual_seq_len=args.visual_seq_len,
+        dropout_prob=args.dropout_prob,
+        target_prefix=args.target_prefix,
+    )
+    model = R2GenT5Model(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    train_loader = DataLoader(
+        R2GenT5Dataset(
+            train_examples,
+            model.tokenizer,
+            max_target_length=args.max_target_length,
+            target_prefix=args.target_prefix,
+        ),
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate_r2gen_t5_batch,
+    )
+    val_loader = DataLoader(
+        R2GenT5Dataset(
+            val_examples,
+            model.tokenizer,
+            max_target_length=args.max_target_length,
+            target_prefix=args.target_prefix,
+        ),
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=collate_r2gen_t5_batch,
+    )
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+    )
+    total_steps = max(1, args.epochs * len(train_loader) // args.gradient_accumulation_steps)
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=max(1, int(0.05 * total_steps)),
+        num_training_steps=total_steps,
+    )
+    scaler = torch.cuda.amp.GradScaler(enabled=args.fp16 and device.type == "cuda")
+
+    history = []
+    for epoch in range(args.epochs):
+        model.train()
+        total_loss = 0.0
+        optimizer.zero_grad(set_to_none=True)
+        for step, batch in enumerate(tqdm(train_loader, desc=f"r2gen-t5 train epoch {epoch + 1}")):
+            images = batch["image"].to(device)
+            labels = batch["labels"].to(device)
+            with torch.cuda.amp.autocast(enabled=args.fp16 and device.type == "cuda"):
+                loss = model.forward(images, labels=labels).loss
+                loss = loss / args.gradient_accumulation_steps
+            scaler.scale(loss).backward()
+            if (step + 1) % args.gradient_accumulation_steps == 0 or step + 1 == len(train_loader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                scheduler.step()
+            total_loss += loss.item() * args.gradient_accumulation_steps
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for batch in tqdm(val_loader, desc="r2gen-t5 validation"):
+                images = batch["image"].to(device)
+                labels = batch["labels"].to(device)
+                loss = model.forward(images, labels=labels).loss
+                val_loss += loss.item()
+
+        row = {
+            "epoch": epoch + 1,
+            "train_loss": total_loss / len(train_loader),
+            "val_loss": val_loss / len(val_loader),
+        }
+        history.append(row)
+        print(row)
+
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(out)
+    (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+    print(f"Saved R2Gen-T5 checkpoint to {out}")
+
+
+if __name__ == "__main__":
+    main()

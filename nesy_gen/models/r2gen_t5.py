@@ -26,7 +26,7 @@ def require_r2gen_t5_dependencies():
         from PIL import Image
         from torch.utils.data import DataLoader
         from torchvision import models, transforms
-        from transformers import AutoTokenizer, T5ForConditionalGeneration
+        from transformers import AutoTokenizer, LogitsProcessorList, T5ForConditionalGeneration
         from transformers.modeling_outputs import BaseModelOutput
         from transformers import get_linear_schedule_with_warmup
     except ImportError as exc:  # pragma: no cover - environment dependent
@@ -39,6 +39,7 @@ def require_r2gen_t5_dependencies():
         "models": models,
         "transforms": transforms,
         "AutoTokenizer": AutoTokenizer,
+        "LogitsProcessorList": LogitsProcessorList,
         "T5ForConditionalGeneration": T5ForConditionalGeneration,
         "BaseModelOutput": BaseModelOutput,
         "get_linear_schedule_with_warmup": get_linear_schedule_with_warmup,
@@ -122,6 +123,7 @@ class R2GenT5Model:
         do_sample: bool = False,
         top_p: float = 0.9,
         temperature: float = 0.8,
+        logits_processor=None,
     ):
         encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
         kwargs = {
@@ -130,6 +132,8 @@ class R2GenT5Model:
             "max_new_tokens": max_new_tokens,
             "num_return_sequences": num_return_sequences,
         }
+        if logits_processor is not None:
+            kwargs["logits_processor"] = logits_processor
         if do_sample:
             kwargs.update(
                 {

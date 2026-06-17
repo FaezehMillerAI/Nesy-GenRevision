@@ -13,10 +13,21 @@ def main() -> None:
     parser.add_argument("--primekg-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--run-name", required=True)
-    parser.add_argument("--generator", choices=["retrieval", "r2gen_t5", "rag_primekg"], default="rag_primekg")
+    parser.add_argument(
+        "--generator",
+        choices=["retrieval", "r2gen_t5", "rag_primekg", "rag_primekg_constrained"],
+        default="rag_primekg",
+    )
     parser.add_argument("--r2gen-checkpoint-dir")
     parser.add_argument("--retrieval-top-k", type=int, default=5)
     parser.add_argument("--r2gen-num-candidates", type=int, default=4)
+    parser.add_argument(
+        "--decoding-mode",
+        choices=["standard", "graph_constrained"],
+        default="standard",
+    )
+    parser.add_argument("--graph-token-boost", type=float, default=2.0)
+    parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
     parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
     parser.add_argument("--official-metrics", action="store_true")
     args = parser.parse_args()
@@ -31,10 +42,14 @@ def main() -> None:
         "r2gen_checkpoint_dir": args.r2gen_checkpoint_dir,
         "retrieval_top_k": args.retrieval_top_k,
         "r2gen_num_candidates": args.r2gen_num_candidates,
+        "decoding_mode": args.decoding_mode,
+        "graph_token_boost": args.graph_token_boost,
+        "unsupported_token_penalty": args.unsupported_token_penalty,
         "subgraph_strategy": args.subgraph_strategy,
         "official_metrics": args.official_metrics,
         "methods": {
             "rag_primekg": "retrieval candidates + optional R2Gen-T5 candidates + PrimeKG LTN audit + consistency gate",
+            "rag_primekg_constrained": "RAG evidence + soft PrimeKG-constrained R2Gen-T5 decoding + LTN audit + consistency gate",
             "r2gen_t5": "raw image-to-report generator",
             "retrieval": "TF-IDF retrieval baseline",
         },

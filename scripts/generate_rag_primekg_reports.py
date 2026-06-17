@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nesy_gen.data.schema import RadiologyExample, load_jsonl
+from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBuilder
 from nesy_gen.generation.rag import RagCandidate, retrieval_candidates, select_primekg_verified_report
 from nesy_gen.kg.entity_linking import LexicalEntityLinker
 from nesy_gen.kg.primekg import PrimeKGGraph
@@ -42,6 +43,15 @@ def main() -> None:
     parser.add_argument("--r2gen-num-beams", type=int, default=6)
     parser.add_argument("--r2gen-batch-size", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=120)
+    parser.add_argument(
+        "--decoding-mode",
+        choices=["standard", "graph_constrained"],
+        default="standard",
+        help="Use standard R2Gen decoding or soft PrimeKG-constrained decoding.",
+    )
+    parser.add_argument("--graph-token-boost", type=float, default=2.0)
+    parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
+    parser.add_argument("--constraint-max-terms", type=int, default=2500)
     parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
     parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
@@ -73,6 +83,12 @@ def main() -> None:
             num_candidates=args.r2gen_num_candidates,
             num_beams=args.r2gen_num_beams,
             max_new_tokens=args.max_new_tokens,
+            decoding_mode=args.decoding_mode,
+            primekg_dir=args.primekg_dir,
+            retrieval_candidate_map=candidate_map,
+            graph_token_boost=args.graph_token_boost,
+            unsupported_token_penalty=args.unsupported_token_penalty,
+            constraint_max_terms=args.constraint_max_terms,
         )
         for study_id, candidates in generated_map.items():
             candidate_map.setdefault(study_id, []).extend(candidates)
@@ -120,14 +136,35 @@ def generate_r2gen_candidates(
     num_candidates: int,
     num_beams: int,
     max_new_tokens: int,
+    decoding_mode: str = "standard",
+    primekg_dir: str | Path | None = None,
+    retrieval_candidate_map: dict[str, list[RagCandidate]] | None = None,
+    graph_token_boost: float = 2.0,
+    unsupported_token_penalty: float = 0.0,
+    constraint_max_terms: int = 2500,
 ) -> dict[str, list[RagCandidate]]:
     deps = require_r2gen_t5_dependencies()
     torch = deps["torch"]
     DataLoader = deps["DataLoader"]
+    LogitsProcessorList = deps["LogitsProcessorList"]
     model = R2GenT5Model.from_pretrained(checkpoint_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model.eval()
+    example_by_id = {example.study_id: example for example in examples}
+    constraint_builder = None
+    if decoding_mode == "graph_constrained":
+        if primekg_dir is None:
+            raise ValueError("graph_constrained decoding requires primekg_dir.")
+        nodes_path = Path(primekg_dir) / "nodes.csv"
+        if not nodes_path.exists():
+            raise FileNotFoundError("graph_constrained decoding requires PrimeKG nodes.csv.")
+        nodes = pd.read_csv(nodes_path)
+        constraint_builder = PrimeKGDecodingConstraintBuilder(
+            nodes,
+            model.tokenizer,
+            max_penalty_terms=constraint_max_terms,
+        )
     loader = DataLoader(
         R2GenT5Dataset(
             examples,
@@ -143,11 +180,30 @@ def generate_r2gen_candidates(
     rows: dict[str, list[RagCandidate]] = {}
     with torch.no_grad():
         for batch in tqdm(loader, desc="R2Gen-T5 RAG candidates"):
+            logits_processor = None
+            if constraint_builder is not None:
+                evidence_texts = [
+                    _constraint_evidence_text(
+                        example_by_id[study_id],
+                        (retrieval_candidate_map or {}).get(study_id, []),
+                    )
+                    for study_id in batch["study_id"]
+                ]
+                logits_processor = LogitsProcessorList(
+                    [
+                        constraint_builder.processor(
+                            evidence_texts,
+                            token_boost=graph_token_boost,
+                            unsupported_token_penalty=unsupported_token_penalty,
+                        )
+                    ]
+                )
             generated = model.generate(
                 batch["image"].to(device),
                 max_new_tokens=max_new_tokens,
                 num_beams=num_beams,
                 num_return_sequences=num_candidates,
+                logits_processor=logits_processor,
             )
             texts = decode_r2gen_predictions(
                 model.tokenizer,
@@ -168,6 +224,15 @@ def generate_r2gen_candidates(
                     if prediction
                 ]
     return rows
+
+
+def _constraint_evidence_text(
+    example: RadiologyExample,
+    retrieval_candidates: list[RagCandidate],
+) -> str:
+    evidence_parts = [example.indication]
+    evidence_parts.extend(candidate.prediction for candidate in retrieval_candidates)
+    return " ".join(part for part in evidence_parts if part)
 
 
 def build_primekg_pipeline(

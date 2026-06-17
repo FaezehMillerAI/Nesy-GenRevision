@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nesy-Gen EACL Revision Research Brief</title>
+  <style>
+    :root {
+      --ink: #172026;
+      --muted: #5c6770;
+      --line: #d8dee4;
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --green: #1f7a4d;
+      --green-bg: #e9f6ef;
+      --amber: #9a6700;
+      --amber-bg: #fff4d6;
+      --red: #b42318;
+      --red-bg: #fdecec;
+      --blue: #1d5f99;
+      --blue-bg: #eaf3fb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.5;
+    }
+
+    header {
+      background: #12212f;
+      color: #fff;
+      padding: 38px 28px 32px;
+      border-bottom: 5px solid #2a9d8f;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 46px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .subtitle {
+      max-width: 920px;
+      color: #dbe7ef;
+      font-size: 17px;
+    }
+
+    .meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .pill.green {
+      color: var(--green);
+      background: var(--green-bg);
+      border-color: #b7dfc8;
+    }
+
+    .pill.amber {
+      color: var(--amber);
+      background: var(--amber-bg);
+      border-color: #ead084;
+    }
+
+    .pill.red {
+      color: var(--red);
+      background: var(--red-bg);
+      border-color: #f1b8b4;
+    }
+
+    .pill.blue {
+      color: var(--blue);
+      background: var(--blue-bg);
+      border-color: #bdd7ed;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+    }
+
+    section {
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+    }
+
+    .span-12 {
+      grid-column: span 12;
+    }
+
+    .span-6 {
+      grid-column: span 6;
+    }
+
+    .span-4 {
+      grid-column: span 4;
+    }
+
+    .callout {
+      border-left: 5px solid #2a9d8f;
+      background: #effaf7;
+    }
+
+    .warning {
+      border-left: 5px solid var(--amber);
+      background: #fffaf0;
+    }
+
+    .risk {
+      border-left: 5px solid var(--red);
+      background: #fff7f7;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background: #eef2f5;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #34414c;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #eef2f5;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 19px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfd;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 25px;
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footnote {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .definition-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .definition {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fbfcfd;
+    }
+
+    .definition strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      header {
+        padding: 24px;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      .card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+
+    @media (max-width: 850px) {
+      main {
+        padding: 16px;
+      }
+
+      header {
+        padding: 28px 16px;
+      }
+
+      .span-6,
+      .span-4 {
+        grid-column: span 12;
+      }
+
+      .metric-row {
+        grid-template-columns: 1fr;
+      }
+
+      .definition-list {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Nesy-Gen EACL Revision Research Brief</h1>
+    <p class="subtitle">
+      A discussion-ready summary of the graph-verified radiology report generation revision:
+      reviewer concerns, implemented evidence, open risks, key terms, and next milestones.
+    </p>
+    <div class="meta">
+      <span class="pill blue">IU-Xray pipeline active</span>
+      <span class="pill green">Real PrimeKG integrated</span>
+      <span class="pill amber">BLIP training in progress</span>
+      <span class="pill amber">MIMIC-CXR pending full run</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid">
+      <div class="card callout span-12">
+        <h2>Executive Summary</h2>
+        <p>
+          The revision has moved from a manuscript-level proposal to a reproducible package with real
+          PrimeKG integration, IU-Xray and MIMIC-CXR data pipelines, graph reasoning, sensitivity analysis,
+          retrieval baselines, factuality evaluation, and qualitative visualization scripts.
+        </p>
+        <p>
+          The graph-verification side is now credible and testable. The main remaining scientific risk is
+          generation quality: the first Swin-tiny plus DistilGPT2 model is weak, retrieval is factually
+          stronger, and the current BLIP/stronger-model run will determine the next paper framing.
+        </p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Quick Glossary</h2>
+      <p>
+        These short definitions are included so the discussion can stay focused on the research decisions,
+        not on decoding metric names.
+      </p>
+      <div class="definition-list">
+        <div class="definition">
+          <strong>PrimeKG</strong>
+          A large biomedical knowledge graph containing diseases, phenotypes, anatomy, drugs, genes,
+          pathways, and relations between them. Here it is used to check whether report entities are
+          medically connected in a plausible graph.
+        </div>
+        <div class="definition">
+          <strong>Radiology PrimeKG cache</strong>
+          A smaller, reusable subset of PrimeKG built from entities that appear in IU-Xray or MIMIC-CXR.
+          It avoids loading the full multi-gigabyte graph for every notebook run.
+        </div>
+        <div class="definition">
+          <strong>Entity linking</strong>
+          The step that maps phrases in a radiology report, such as "pleural effusion" or "cardiomegaly",
+          to PrimeKG node IDs. If this step is noisy, later graph reasoning can also become noisy.
+        </div>
+        <div class="definition">
+          <strong>Graph score</strong>
+          A summary of how well the report's clinical concepts agree with PrimeKG. It combines several
+          graph checks into one overall signal.
+        </div>
+        <div class="definition">
+          <strong>Finding-to-diagnosis score</strong>
+          Measures whether extracted findings and disease/diagnosis-like entities are connected through
+          PrimeKG. A high value suggests the report entities are graph-compatible.
+        </div>
+        <div class="definition">
+          <strong>Located-in/type score</strong>
+          Checks whether linked entities have plausible biomedical types and anatomy-style grounding.
+          This is why a high value is encouraging but not by itself sufficient for report quality.
+        </div>
+        <div class="definition">
+          <strong>Bio-temporal score</strong>
+          Measures whether the induced graph paths satisfy the biological and temporal assumptions in
+          the method. This is currently the weakest score, so it should be refined or described carefully.
+        </div>
+        <div class="definition">
+          <strong>Entity overlap</strong>
+          A factuality check that compares the clinical concepts in a generated report with the concepts
+          in the reference report.
+        </div>
+        <div class="definition">
+          <strong>Unsupported entities</strong>
+          Clinical concepts that appear in a generated report but are not supported by the reference report.
+          This is useful, but it is not the same as radiologist review.
+        </div>
+        <div class="definition">
+          <strong>BLEU / ROUGE</strong>
+          Standard text-overlap scores. They help measure wording similarity, but they do not fully capture
+          whether a radiology report is clinically correct.
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card span-4">
+        <h3>Strongest Progress</h3>
+        <ul>
+          <li>Reproducible package and Colab workflow.</li>
+          <li>Real PrimeKG Dataverse files used.</li>
+          <li>Reusable radiology PrimeKG cache built.</li>
+          <li>Full IU-Xray graph reasoning pipeline.</li>
+        </ul>
+      </div>
+      <div class="card span-4">
+        <h3>Main Risk</h3>
+        <ul>
+          <li>Raw neural generation is currently weak.</li>
+          <li>Generated reports are not yet publication-grade.</li>
+          <li>Factuality still needs stronger validation.</li>
+          <li>Need stronger generation or revised framing.</li>
+        </ul>
+      </div>
+      <div class="card span-4">
+        <h3>Immediate Decision</h3>
+        <ul>
+          <li>If BLIP improves: keep generation-centered framing.</li>
+          <li>If BLIP remains weak: pivot to graph-verified retrieval/hybrid generation.</li>
+          <li>Avoid unsupported SOTA claims either way.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Reviewer Concerns vs Current Status</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Reviewer Concern</th>
+              <th>What We Implemented</th>
+              <th>Status</th>
+              <th>Evidence or Artifact</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Reproducibility unclear</td>
+              <td>Modular package, scripts, tests, Colab workflow, Drive dataset cache.</td>
+              <td><span class="pill green">Mostly addressed</span></td>
+              <td><code>nesy_gen/</code>, <code>scripts/</code>, test suite, GitHub repo.</td>
+            </tr>
+            <tr>
+              <td>Real PrimeKG use unclear</td>
+              <td>Real Dataverse PrimeKG loader and radiology-specific cache.</td>
+              <td><span class="pill green">Addressed</span></td>
+              <td><code>dataverse_files</code>, <code>primekg_radiology_cache_iuxray</code>.</td>
+            </tr>
+            <tr>
+              <td>Dataset handling unclear</td>
+              <td>IU-Xray and MIMIC-CXR manifest builders.</td>
+              <td><span class="pill amber">IU done, MIMIC ready</span></td>
+              <td><code>scripts/build_manifest.py</code>, cached Colab cells.</td>
+            </tr>
+            <tr>
+              <td>Entity linking not validated</td>
+              <td>Lexical linker, noisy alias filtering, coverage tables.</td>
+              <td><span class="pill amber">Partially addressed</span></td>
+              <td><code>*_coverage.csv</code>, entity frequency outputs.</td>
+            </tr>
+            <tr>
+              <td>Error propagation missing</td>
+              <td>Drop/swap sensitivity experiments.</td>
+              <td><span class="pill green">Implemented</span></td>
+              <td><code>scripts/run_sensitivity_from_reasoning.py</code>.</td>
+            </tr>
+            <tr>
+              <td>Hallucination evaluation missing</td>
+              <td>Entity-level factuality and hallucination proxy.</td>
+              <td><span class="pill amber">Implemented, needs strengthening</span></td>
+              <td><code>scripts/evaluate_generation.py</code>, factuality CSV.</td>
+            </tr>
+            <tr>
+              <td>Baselines missing</td>
+              <td>TF-IDF retrieval, Swin/GPT2, BLIP, comparison script.</td>
+              <td><span class="pill amber">In progress</span></td>
+              <td><code>run_retrieval_baseline.py</code>, BLIP scripts.</td>
+            </tr>
+            <tr>
+              <td>Runtime missing</td>
+              <td>Latency support, fast ego subgraph mode, reusable graph cache.</td>
+              <td><span class="pill amber">Partially addressed</span></td>
+              <td>Reasoning summary JSON files.</td>
+            </tr>
+            <tr>
+              <td>Qualitative evidence missing</td>
+              <td>HTML qualitative report and plotting scripts.</td>
+              <td><span class="pill amber">Implemented, outputs pending</span></td>
+              <td><code>build_qualitative_report.py</code>, <code>plot_results.py</code>.</td>
+            </tr>
+            <tr>
+              <td>Claims too broad</td>
+              <td>Plan to narrow SOTA language and reposition contribution.</td>
+              <td><span class="pill red">Manuscript pending</span></td>
+              <td>Reviewer response matrix and manuscript edit needed.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>IU-Xray Results So Far</h2>
+      <p>
+        The IU-Xray graph-verification pipeline is now running on real reports and real PrimeKG. These
+        results are not yet the final generated-report results; they tell us whether the clinical concepts
+        extracted from reports are coherent with the biomedical graph.
+      </p>
+      <div class="table-wrap" style="margin-top: 16px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Part of the Pipeline</th>
+              <th>What We Know</th>
+              <th>How To Talk About It</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Graph reasoning</td>
+              <td>Working on IU-Xray with the radiology PrimeKG cache.</td>
+              <td>The graph side is now operational and reproducible.</td>
+            </tr>
+            <tr>
+              <td>Finding-to-diagnosis consistency</td>
+              <td>Looks promising.</td>
+              <td>Extracted findings are often medically connected to diagnosis-like concepts in PrimeKG.</td>
+            </tr>
+            <tr>
+              <td>Located-in/type consistency</td>
+              <td>Looks strong.</td>
+              <td>The linked entities usually have plausible biomedical/anatomical types.</td>
+            </tr>
+            <tr>
+              <td>Bio-temporal consistency</td>
+              <td>Needs more care.</td>
+              <td>This component should be refined or framed carefully because it is the weakest graph signal.</td>
+            </tr>
+            <tr>
+              <td>Sensitivity analysis</td>
+              <td>Implemented.</td>
+              <td>We can now show how errors in entity extraction affect graph verification.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Generation and Factuality Status</h2>
+      <p>
+        The first neural generator is not strong enough to carry the paper. Retrieval is currently more
+        factually reliable, and the BLIP run is testing whether a stronger pretrained image-language model
+        can improve the generation side.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Current Reading</th>
+              <th>What It Means</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Swin-tiny + DistilGPT2</td>
+              <td>Weak generation and weak factuality.</td>
+              <td>Useful as an ablation, but not suitable as the main model.</td>
+              <td><span class="pill red">Too weak as main model</span></td>
+            </tr>
+            <tr>
+              <td>TF-IDF retrieval baseline</td>
+              <td>More factually reliable than the first neural model.</td>
+              <td>Strong evidence that retrieval/grounding should remain central.</td>
+              <td><span class="pill green">Factually stronger baseline</span></td>
+            </tr>
+            <tr>
+              <td>BLIP image-captioning baseline</td>
+              <td>Still training/evaluating.</td>
+              <td>This decides whether a stronger neural generator can become the main system.</td>
+              <td><span class="pill amber">Training now</span></td>
+            </tr>
+            <tr>
+              <td>Graph-verified hybrid system</td>
+              <td>Not finalized yet.</td>
+              <td>Likely fallback if pure generation remains weak.</td>
+              <td><span class="pill blue">Best fallback if BLIP weak</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Milestone Tracker</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Milestone</th>
+              <th>Goal</th>
+              <th>Status</th>
+              <th>Next Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Reproducible package</td>
+              <td><span class="pill green">Done</span></td>
+              <td>Keep tests passing and push latest cache resolver when GitHub auth is available.</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Real PrimeKG integration</td>
+              <td><span class="pill green">Done</span></td>
+              <td>Document full PrimeKG and radiology-cache construction.</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>IU-Xray end-to-end reasoning</td>
+              <td><span class="pill green">Mostly done</span></td>
+              <td>Finalize corrected full-run artifact filenames.</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Error propagation</td>
+              <td><span class="pill green">Implemented</span></td>
+              <td>Run final sensitivity table on selected IU subset or full set.</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>Hallucination and factuality</td>
+              <td><span class="pill amber">Partially done</span></td>
+              <td>Add stronger RadGraph or CheXbert-style metric if feasible.</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>Neural generation</td>
+              <td><span class="pill amber">In progress</span></td>
+              <td>Finish BLIP training and evaluation.</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>Baseline comparison</td>
+              <td><span class="pill amber">In progress</span></td>
+              <td>Compare BLIP, retrieval, and Swin/GPT2.</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td>MIMIC-CXR validation</td>
+              <td><span class="pill amber">Ready, not complete</span></td>
+              <td>Run MIMIC graph pipeline after IU stabilizes.</td>
+            </tr>
+            <tr>
+              <td>9</td>
+              <td>Qualitative and visual evidence</td>
+              <td><span class="pill amber">Implemented, pending outputs</span></td>
+              <td>Generate HTML reports and plots from final model outputs.</td>
+            </tr>
+            <tr>
+              <td>10</td>
+              <td>Manuscript revision</td>
+              <td><span class="pill red">Pending</span></td>
+              <td>Create reviewer-response matrix and rewrite method/results sections.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card warning span-6">
+        <h2>Discussion Points</h2>
+        <ol>
+          <li>Should the paper remain generation-centered if BLIP improves?</li>
+          <li>Should we pivot toward graph-verified factuality and retrieval-augmented generation?</li>
+          <li>How much effort should go into MIMIC-CXR before manuscript rewriting begins?</li>
+          <li>Do we need official RadGraph or CheXbert evaluation for EACL credibility?</li>
+          <li>Which claims should be simplified or narrowed before resubmission?</li>
+        </ol>
+      </div>
+      <div class="card risk span-6">
+        <h2>Risks To Be Honest About</h2>
+        <ul>
+          <li>The initial neural generator is not competitive enough for main claims.</li>
+          <li>The current hallucination metric is entity-level proxy evidence, not radiologist review.</li>
+          <li>The bio-temporal graph component needs more care.</li>
+          <li>MIMIC-CXR is supported in code but still needs full execution.</li>
+          <li>GitHub push of the latest cache resolver needs valid authentication.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Recommended Next Steps</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Step</th>
+              <th>Why It Matters</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Finish BLIP run and evaluate metrics.</td>
+              <td>Determines whether generation quality is salvageable with a stronger pretrained model.</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Compare BLIP vs retrieval vs Swin/GPT2.</td>
+              <td>Creates a defensible baseline table for the manuscript.</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Generate qualitative HTML and plots.</td>
+              <td>Supports meeting review, appendix material, and error analysis.</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Run final IU sensitivity and factuality outputs.</td>
+              <td>Completes reviewer evidence for robustness and hallucination.</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>Resume MIMIC-CXR graph run.</td>
+              <td>Adds second-dataset validation and improves external credibility.</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>Decide paper framing.</td>
+              <td>Clarifies whether the contribution is generation quality, graph verification, or factuality control.</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>Draft reviewer-response matrix.</td>
+              <td>Converts experiments into a publication-ready revision plan.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card callout">
+      <h2>One-Sentence Meeting Summary</h2>
+      <p>
+        We have largely solved the reproducibility and real-graph evidence problem, but the next
+        publication-critical decision is whether a stronger pretrained generator can meet quality targets
+        or whether the paper should be reframed around graph-verified factuality and retrieval-augmented generation.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

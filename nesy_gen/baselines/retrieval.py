@@ -17,33 +17,53 @@ class RetrievalPrediction:
     prediction: str
     retrieved_study_id: str
     similarity: float
+    rank: int = 1
 
 
 def run_tfidf_retrieval(
     train_examples: list[RadiologyExample],
     query_examples: list[RadiologyExample],
 ) -> list[RetrievalPrediction]:
+    return [
+        predictions[0]
+        for predictions in run_tfidf_retrieval_topk(train_examples, query_examples, top_k=1)
+        if predictions
+    ]
+
+
+def run_tfidf_retrieval_topk(
+    train_examples: list[RadiologyExample],
+    query_examples: list[RadiologyExample],
+    *,
+    top_k: int = 5,
+) -> list[list[RetrievalPrediction]]:
     if not train_examples:
         raise ValueError("train_examples cannot be empty")
+    if top_k < 1:
+        raise ValueError("top_k must be >= 1")
     train_queries = [_query_text(example) for example in train_examples]
     test_queries = [_query_text(example) for example in query_examples]
     idf = _idf(train_queries)
     train_vectors = [_tfidf_vector(text, idf) for text in train_queries]
-    predictions: list[RetrievalPrediction] = []
+    all_predictions: list[list[RetrievalPrediction]] = []
     for row_idx, example in enumerate(query_examples):
         query_vector = _tfidf_vector(test_queries[row_idx], idf)
         scores = [_cosine(query_vector, train_vector) for train_vector in train_vectors]
-        best_idx = max(range(len(scores)), key=lambda idx: scores[idx])
-        retrieved = train_examples[best_idx]
-        predictions.append(
-            RetrievalPrediction(
-                study_id=example.study_id,
-                prediction=retrieved.report,
-                retrieved_study_id=retrieved.study_id,
-                similarity=float(scores[best_idx]),
+        ranked = sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)[:top_k]
+        predictions = []
+        for rank, train_idx in enumerate(ranked, start=1):
+            retrieved = train_examples[train_idx]
+            predictions.append(
+                RetrievalPrediction(
+                    study_id=example.study_id,
+                    prediction=retrieved.report,
+                    retrieved_study_id=retrieved.study_id,
+                    similarity=float(scores[train_idx]),
+                    rank=rank,
+                )
             )
-        )
-    return predictions
+        all_predictions.append(predictions)
+    return all_predictions
 
 
 def _query_text(example: RadiologyExample) -> str:

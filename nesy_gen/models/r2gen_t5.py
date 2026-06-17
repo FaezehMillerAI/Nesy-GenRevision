@@ -13,6 +13,8 @@ class R2GenT5Config:
     text_model_name: str = "t5-small"
     tokenizer_name: str = "t5-small"
     visual_backbone: str = "resnet101"
+    freeze_visual_encoder: bool = False
+    image_size: int = 224
     max_target_length: int = 160
     visual_seq_len: int = 512
     dropout_prob: float = 0.1
@@ -70,17 +72,14 @@ class R2GenT5Model:
         if self.text_model.config.pad_token_id is None:
             self.text_model.config.pad_token_id = self.tokenizer.pad_token_id
 
-        if config.visual_backbone != "resnet101":
-            raise ValueError("Only visual_backbone='resnet101' is currently supported.")
-        try:
-            weights = models.ResNet101_Weights.DEFAULT
-            self.visual_extractor = models.resnet101(weights=weights)
-        except AttributeError:  # pragma: no cover - old torchvision
-            self.visual_extractor = models.resnet101(pretrained=True)
-        self.visual_extractor.fc = nn.Linear(
-            self.visual_extractor.fc.in_features,
+        self.visual_extractor, self.visual_projection = _build_visual_extractor(
+            models,
+            nn,
+            config.visual_backbone,
             self.text_model.config.d_model,
         )
+        if config.freeze_visual_encoder:
+            _freeze_visual_backbone(self.visual_extractor, self.visual_projection)
         self.dropout = nn.Dropout(config.dropout_prob)
         self.device = torch.device("cpu")
 
@@ -93,7 +92,11 @@ class R2GenT5Model:
 
     def train(self):
         self.text_model.train()
-        self.visual_extractor.train()
+        if self.config.freeze_visual_encoder:
+            self.visual_extractor.eval()
+            self.visual_projection.train()
+        else:
+            self.visual_extractor.train()
         self.dropout.train()
 
     def eval(self):
@@ -103,7 +106,7 @@ class R2GenT5Model:
 
     def parameters(self):
         yield from self.text_model.parameters()
-        yield from self.visual_extractor.parameters()
+        yield from (parameter for parameter in self.visual_extractor.parameters() if parameter.requires_grad)
 
     def forward(self, images, labels=None):
         encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
@@ -124,6 +127,11 @@ class R2GenT5Model:
         top_p: float = 0.9,
         temperature: float = 0.8,
         logits_processor=None,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+        length_penalty: float = 1.0,
+        num_beam_groups: int = 1,
+        diversity_penalty: float = 0.0,
     ):
         encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
         kwargs = {
@@ -131,6 +139,9 @@ class R2GenT5Model:
             "attention_mask": attention_mask,
             "max_new_tokens": max_new_tokens,
             "num_return_sequences": num_return_sequences,
+            "repetition_penalty": repetition_penalty,
+            "no_repeat_ngram_size": no_repeat_ngram_size,
+            "length_penalty": length_penalty,
         }
         if logits_processor is not None:
             kwargs["logits_processor"] = logits_processor
@@ -144,7 +155,13 @@ class R2GenT5Model:
                 }
             )
         else:
-            kwargs["num_beams"] = max(num_beams, num_return_sequences)
+            effective_beams = max(num_beams, num_return_sequences)
+            kwargs["num_beams"] = effective_beams
+            if num_beam_groups > 1:
+                if effective_beams % num_beam_groups != 0:
+                    raise ValueError("num_beams must be divisible by num_beam_groups.")
+                kwargs["num_beam_groups"] = num_beam_groups
+                kwargs["diversity_penalty"] = diversity_penalty
         return self.text_model.generate(**kwargs)
 
     def _visual_encoder_outputs(self, images):
@@ -194,6 +211,49 @@ class R2GenT5Model:
         return model
 
 
+def _build_visual_extractor(models, nn, visual_backbone: str, output_dim: int):
+    backbone = visual_backbone.lower()
+    if backbone == "resnet101":
+        try:
+            model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
+        except AttributeError:  # pragma: no cover - old torchvision
+            model = models.resnet101(pretrained=True)
+        model.fc = nn.Linear(model.fc.in_features, output_dim)
+        return model, model.fc
+
+    if backbone == "convnext_base":
+        model = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
+        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, output_dim)
+        return model, model.classifier[-1]
+
+    if backbone == "efficientnet_v2_s":
+        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
+        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, output_dim)
+        return model, model.classifier[-1]
+
+    if backbone == "swin_t":
+        model = models.swin_t(weights=models.Swin_T_Weights.DEFAULT)
+        model.head = nn.Linear(model.head.in_features, output_dim)
+        return model, model.head
+
+    if backbone == "densenet121":
+        model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
+        model.classifier = nn.Linear(model.classifier.in_features, output_dim)
+        return model, model.classifier
+
+    raise ValueError(
+        "Unsupported visual_backbone. Choose one of: "
+        "resnet101, convnext_base, efficientnet_v2_s, swin_t, densenet121."
+    )
+
+
+def _freeze_visual_backbone(visual_extractor, projection) -> None:
+    for parameter in visual_extractor.parameters():
+        parameter.requires_grad = False
+    for parameter in projection.parameters():
+        parameter.requires_grad = True
+
+
 class R2GenT5Dataset:
     def __init__(
         self,
@@ -203,6 +263,7 @@ class R2GenT5Dataset:
         max_target_length: int,
         include_labels: bool = True,
         target_prefix: str = "generate report: ",
+        image_size: int = 224,
     ) -> None:
         deps = require_r2gen_t5_dependencies()
         transforms = deps["transforms"]
@@ -212,9 +273,10 @@ class R2GenT5Dataset:
         self.max_target_length = max_target_length
         self.include_labels = include_labels
         self.target_prefix = target_prefix
+        self.image_size = image_size
         self.image_transform = transforms.Compose(
             [
-                transforms.Resize((224, 224)),
+                transforms.Resize((image_size, image_size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]

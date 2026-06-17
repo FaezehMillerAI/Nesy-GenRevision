@@ -27,6 +27,18 @@ class GenerationMetricsTest(unittest.TestCase):
         self.assertGreater(metrics["token_precision"], 0.99)
         self.assertGreater(metrics["token_recall"], 0.99)
         self.assertGreater(metrics["token_f1"], 0.99)
+        self.assertEqual(metrics["unique_prediction_ratio"], 1.0)
+
+    def test_diversity_metrics_detect_repeated_predictions(self):
+        frame = pd.DataFrame(
+            [
+                {"prediction": "lungs are clear", "reference": "lungs are clear"},
+                {"prediction": "lungs are clear", "reference": "heart is normal"},
+            ]
+        )
+        metrics = corpus_generation_metrics(frame)
+        self.assertEqual(metrics["unique_prediction_ratio"], 0.5)
+        self.assertEqual(metrics["max_prediction_frequency_rate"], 1.0)
 
     def test_empty_metrics(self):
         self.assertEqual(rouge_l([], ["a"]), 0.0)

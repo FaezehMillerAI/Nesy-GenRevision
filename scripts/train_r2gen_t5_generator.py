@@ -24,11 +24,18 @@ from nesy_gen.utils.seed import seed_everything
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train an R2Gen-style ResNet101 + T5 report generator.")
+    parser = argparse.ArgumentParser(description="Train a Vision-T5 image-to-report generator.")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--text-model-name", default="t5-small")
     parser.add_argument("--tokenizer-name", default="t5-small")
+    parser.add_argument(
+        "--visual-backbone",
+        choices=["resnet101", "convnext_base", "efficientnet_v2_s", "swin_t", "densenet121"],
+        default="resnet101",
+    )
+    parser.add_argument("--freeze-visual-encoder", action="store_true")
+    parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
@@ -85,6 +92,9 @@ def main() -> None:
     config = R2GenT5Config(
         text_model_name=args.text_model_name,
         tokenizer_name=args.tokenizer_name,
+        visual_backbone=args.visual_backbone,
+        freeze_visual_encoder=args.freeze_visual_encoder,
+        image_size=args.image_size,
         max_target_length=args.max_target_length,
         visual_seq_len=args.visual_seq_len,
         dropout_prob=args.dropout_prob,
@@ -100,6 +110,7 @@ def main() -> None:
             model.tokenizer,
             max_target_length=args.max_target_length,
             target_prefix=args.target_prefix,
+            image_size=args.image_size,
         ),
         batch_size=args.batch_size,
         shuffle=True,
@@ -111,6 +122,7 @@ def main() -> None:
             model.tokenizer,
             max_target_length=args.max_target_length,
             target_prefix=args.target_prefix,
+            image_size=args.image_size,
         ),
         batch_size=args.batch_size,
         shuffle=False,

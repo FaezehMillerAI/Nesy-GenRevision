@@ -26,6 +26,9 @@ def main() -> None:
     parser.add_argument("--generator-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--retrieval-top-k", type=int, default=5)
     parser.add_argument("--r2gen-num-candidates", "--generator-num-candidates", dest="generator_num_candidates", type=int, default=4)
+    parser.add_argument("--vision-backbone", default="")
+    parser.add_argument("--text-model-name", default="")
+    parser.add_argument("--freeze-visual-encoder", action="store_true")
     parser.add_argument(
         "--decoding-mode",
         choices=["standard", "graph_constrained"],
@@ -33,6 +36,11 @@ def main() -> None:
     )
     parser.add_argument("--graph-token-boost", type=float, default=2.0)
     parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
+    parser.add_argument("--generator-repetition-penalty", type=float, default=1.0)
+    parser.add_argument("--generator-no-repeat-ngram-size", type=int, default=0)
+    parser.add_argument("--generator-length-penalty", type=float, default=1.0)
+    parser.add_argument("--generator-num-beam-groups", type=int, default=1)
+    parser.add_argument("--generator-diversity-penalty", type=float, default=0.0)
     parser.add_argument(
         "--selection-objective",
         choices=["graph", "evidence", "hybrid"],
@@ -60,11 +68,19 @@ def main() -> None:
         "run_name": args.run_name,
         "generator": args.generator,
         "generator_checkpoint_dir": args.generator_checkpoint_dir,
+        "vision_backbone": args.vision_backbone,
+        "text_model_name": args.text_model_name,
+        "freeze_visual_encoder": args.freeze_visual_encoder,
         "retrieval_top_k": args.retrieval_top_k,
         "generator_num_candidates": args.generator_num_candidates,
         "decoding_mode": args.decoding_mode,
         "graph_token_boost": args.graph_token_boost,
         "unsupported_token_penalty": args.unsupported_token_penalty,
+        "generator_repetition_penalty": args.generator_repetition_penalty,
+        "generator_no_repeat_ngram_size": args.generator_no_repeat_ngram_size,
+        "generator_length_penalty": args.generator_length_penalty,
+        "generator_num_beam_groups": args.generator_num_beam_groups,
+        "generator_diversity_penalty": args.generator_diversity_penalty,
         "selection_objective": args.selection_objective,
         "graph_score_weight": args.graph_score_weight,
         "evidence_weight": args.evidence_weight,

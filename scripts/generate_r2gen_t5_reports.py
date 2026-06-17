@@ -33,6 +33,11 @@ def main() -> None:
     parser.add_argument("--do-sample", action="store_true")
     parser.add_argument("--top-p", type=float, default=0.9)
     parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--repetition-penalty", type=float, default=1.0)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=0)
+    parser.add_argument("--length-penalty", type=float, default=1.0)
+    parser.add_argument("--num-beam-groups", type=int, default=1)
+    parser.add_argument("--diversity-penalty", type=float, default=0.0)
     args = parser.parse_args()
 
     deps = require_r2gen_t5_dependencies()
@@ -54,6 +59,7 @@ def main() -> None:
             max_target_length=model.config.max_target_length,
             include_labels=False,
             target_prefix=model.config.target_prefix,
+            image_size=model.config.image_size,
         ),
         batch_size=args.batch_size,
         shuffle=False,
@@ -71,6 +77,11 @@ def main() -> None:
                 do_sample=args.do_sample,
                 top_p=args.top_p,
                 temperature=args.temperature,
+                repetition_penalty=args.repetition_penalty,
+                no_repeat_ngram_size=args.no_repeat_ngram_size,
+                length_penalty=args.length_penalty,
+                num_beam_groups=args.num_beam_groups,
+                diversity_penalty=args.diversity_penalty,
             )
             texts = decode_r2gen_predictions(
                 model.tokenizer,

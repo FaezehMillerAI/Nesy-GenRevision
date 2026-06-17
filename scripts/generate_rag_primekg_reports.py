@@ -44,6 +44,14 @@ def main() -> None:
     parser.add_argument("--generated-evidence-score", type=float, default=0.50)
     parser.add_argument("--r2gen-num-beams", "--generator-num-beams", dest="generator_num_beams", type=int, default=6)
     parser.add_argument("--r2gen-batch-size", "--generator-batch-size", dest="generator_batch_size", type=int, default=2)
+    parser.add_argument("--generator-do-sample", action="store_true")
+    parser.add_argument("--generator-top-p", type=float, default=0.9)
+    parser.add_argument("--generator-temperature", type=float, default=0.8)
+    parser.add_argument("--generator-repetition-penalty", type=float, default=1.0)
+    parser.add_argument("--generator-no-repeat-ngram-size", type=int, default=0)
+    parser.add_argument("--generator-length-penalty", type=float, default=1.0)
+    parser.add_argument("--generator-num-beam-groups", type=int, default=1)
+    parser.add_argument("--generator-diversity-penalty", type=float, default=0.0)
     parser.add_argument("--max-new-tokens", type=int, default=120)
     parser.add_argument(
         "--decoding-mode",
@@ -93,6 +101,14 @@ def main() -> None:
             batch_size=args.generator_batch_size,
             num_candidates=args.generator_num_candidates,
             num_beams=args.generator_num_beams,
+            do_sample=args.generator_do_sample,
+            top_p=args.generator_top_p,
+            temperature=args.generator_temperature,
+            repetition_penalty=args.generator_repetition_penalty,
+            no_repeat_ngram_size=args.generator_no_repeat_ngram_size,
+            length_penalty=args.generator_length_penalty,
+            num_beam_groups=args.generator_num_beam_groups,
+            diversity_penalty=args.generator_diversity_penalty,
             max_new_tokens=args.max_new_tokens,
             decoding_mode=args.decoding_mode,
             primekg_dir=args.primekg_dir,
@@ -152,6 +168,14 @@ def generate_r2gen_candidates(
     num_candidates: int,
     num_beams: int,
     max_new_tokens: int,
+    do_sample: bool = False,
+    top_p: float = 0.9,
+    temperature: float = 0.8,
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int = 0,
+    length_penalty: float = 1.0,
+    num_beam_groups: int = 1,
+    diversity_penalty: float = 0.0,
     decoding_mode: str = "standard",
     primekg_dir: str | Path | None = None,
     retrieval_candidate_map: dict[str, list[RagCandidate]] | None = None,
@@ -189,6 +213,7 @@ def generate_r2gen_candidates(
             max_target_length=model.config.max_target_length,
             include_labels=False,
             target_prefix=model.config.target_prefix,
+            image_size=model.config.image_size,
         ),
         batch_size=batch_size,
         shuffle=False,
@@ -220,6 +245,14 @@ def generate_r2gen_candidates(
                 max_new_tokens=max_new_tokens,
                 num_beams=num_beams,
                 num_return_sequences=num_candidates,
+                do_sample=do_sample,
+                top_p=top_p,
+                temperature=temperature,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                length_penalty=length_penalty,
+                num_beam_groups=num_beam_groups,
+                diversity_penalty=diversity_penalty,
                 logits_processor=logits_processor,
             )
             texts = decode_r2gen_predictions(

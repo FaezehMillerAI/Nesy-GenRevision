@@ -53,11 +53,41 @@ def corpus_generation_metrics(predictions: pd.DataFrame) -> dict[str, float]:
                 "token_recall",
                 "token_f1",
                 "cider_lite",
+                "unique_prediction_ratio",
+                "max_prediction_frequency_rate",
+                "distinct_1",
+                "distinct_2",
             ]
         }
     metrics = {key: sum(row[key] for row in rows) / len(rows) for key in rows[0]}
     metrics["cider_lite"] = cider_lite(tokenized)
+    metrics.update(diversity_metrics(predictions, tokenized))
     return metrics
+
+
+def diversity_metrics(
+    predictions: pd.DataFrame,
+    tokenized_pairs: list[tuple[list[str], list[str]]],
+) -> dict[str, float]:
+    prediction_texts = [" ".join(str(text).split()) for text in predictions["prediction"].tolist()]
+    total = len(prediction_texts)
+    if total == 0:
+        return {
+            "unique_prediction_ratio": 0.0,
+            "max_prediction_frequency_rate": 0.0,
+            "distinct_1": 0.0,
+            "distinct_2": 0.0,
+        }
+    counts = Counter(prediction_texts)
+    pred_tokens = [pred for pred, _ in tokenized_pairs]
+    unigrams = [token for tokens in pred_tokens for token in tokens]
+    bigrams = [ngram for tokens in pred_tokens for ngram in _ngrams(tokens, 2)]
+    return {
+        "unique_prediction_ratio": len(counts) / total,
+        "max_prediction_frequency_rate": max(counts.values()) / total,
+        "distinct_1": len(set(unigrams)) / max(1, len(unigrams)),
+        "distinct_2": len(set(bigrams)) / max(1, len(bigrams)),
+    }
 
 
 def sentence_bleu(pred: list[str], ref: list[str], *, max_n: int = 4) -> float:

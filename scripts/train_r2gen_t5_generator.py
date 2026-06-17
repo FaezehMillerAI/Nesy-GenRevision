@@ -6,11 +6,13 @@ from pathlib import Path
 import sys
 import time
 
+import pandas as pd
 from tqdm.auto import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nesy_gen.data.schema import load_jsonl
+from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBuilder
 from nesy_gen.models.r2gen_t5 import (
     R2GenT5Config,
     R2GenT5Dataset,
@@ -46,6 +48,21 @@ def main() -> None:
         help="plain is safest for Colab subprocess output; tqdm is best for terminals.",
     )
     parser.add_argument("--progress-every", type=int, default=5)
+    parser.add_argument(
+        "--graph-training-mode",
+        choices=["none", "primekg_token"],
+        default="none",
+        help="Optional graph-aware training. Default keeps plain R2Gen-T5 intact.",
+    )
+    parser.add_argument("--graph-loss-nodes-csv")
+    parser.add_argument("--graph-token-loss-weight", type=float, default=0.0)
+    parser.add_argument("--unsupported-token-loss-weight", type=float, default=0.0)
+    parser.add_argument("--graph-loss-max-terms", type=int, default=2500)
+    parser.add_argument(
+        "--graph-loss-source",
+        choices=["reference", "indication_reference"],
+        default="indication_reference",
+    )
     parser.add_argument("--fp16", action="store_true")
     args = parser.parse_args()
 
@@ -112,6 +129,19 @@ def main() -> None:
         num_training_steps=total_steps,
     )
     scaler = torch.cuda.amp.GradScaler(enabled=args.fp16 and device.type == "cuda")
+    graph_loss_helper = _build_graph_loss_helper(args, model)
+    if graph_loss_helper is None:
+        print("Graph-aware training: disabled. Training plain R2Gen-T5.", flush=True)
+    else:
+        print(
+            (
+                "Graph-aware training: enabled "
+                f"mode={args.graph_training_mode} "
+                f"graph_token_weight={args.graph_token_loss_weight} "
+                f"unsupported_weight={args.unsupported_token_loss_weight}"
+            ),
+            flush=True,
+        )
 
     history = []
     for epoch in range(args.epochs):
@@ -129,7 +159,17 @@ def main() -> None:
             images = batch["image"].to(device)
             labels = batch["labels"].to(device)
             with torch.cuda.amp.autocast(enabled=args.fp16 and device.type == "cuda"):
-                loss = model.forward(images, labels=labels).loss
+                outputs = model.forward(images, labels=labels)
+                generation_loss = outputs.loss
+                graph_loss, graph_metrics = _graph_training_loss(
+                    graph_loss_helper,
+                    outputs.logits,
+                    labels,
+                    batch,
+                    torch,
+                    device,
+                )
+                loss = generation_loss + graph_loss
                 loss = loss / args.gradient_accumulation_steps
             scaler.scale(loss).backward()
             if (step + 1) % args.gradient_accumulation_steps == 0 or step + 1 == len(train_loader):
@@ -150,6 +190,7 @@ def main() -> None:
                 metrics={
                     "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
                     "avg": f"{total_loss / (step + 1):.4f}",
+                    **graph_metrics,
                     "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
                     "seen": str(seen_examples),
                     **_gpu_progress(torch, device),
@@ -168,7 +209,17 @@ def main() -> None:
             for step, batch in enumerate(val_progress):
                 images = batch["image"].to(device)
                 labels = batch["labels"].to(device)
-                loss = model.forward(images, labels=labels).loss
+                outputs = model.forward(images, labels=labels)
+                generation_loss = outputs.loss
+                graph_loss, graph_metrics = _graph_training_loss(
+                    graph_loss_helper,
+                    outputs.logits,
+                    labels,
+                    batch,
+                    torch,
+                    device,
+                )
+                loss = generation_loss + graph_loss
                 val_loss += loss.item()
                 _update_progress(
                     val_progress,
@@ -181,6 +232,7 @@ def main() -> None:
                     metrics={
                         "loss": f"{loss.item():.4f}",
                         "avg": f"{val_loss / (step + 1):.4f}",
+                        **graph_metrics,
                         **_gpu_progress(torch, device),
                     },
                 )
@@ -198,6 +250,99 @@ def main() -> None:
     model.save_pretrained(out)
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
     print(f"Saved R2Gen-T5 checkpoint to {out}")
+
+
+def _build_graph_loss_helper(args, model):
+    if args.graph_training_mode == "none":
+        return None
+    if args.graph_training_mode != "primekg_token":
+        raise ValueError(f"Unsupported graph training mode: {args.graph_training_mode}")
+    if not args.graph_loss_nodes_csv:
+        raise ValueError("--graph-loss-nodes-csv is required for primekg_token graph training.")
+    if args.graph_token_loss_weight <= 0.0 and args.unsupported_token_loss_weight <= 0.0:
+        raise ValueError("At least one graph loss weight must be above zero.")
+
+    nodes = pd.read_csv(args.graph_loss_nodes_csv)
+    builder = PrimeKGDecodingConstraintBuilder(
+        nodes,
+        model.tokenizer,
+        max_penalty_terms=args.graph_loss_max_terms,
+    )
+    return {
+        "builder": builder,
+        "graph_token_loss_weight": float(args.graph_token_loss_weight),
+        "unsupported_token_loss_weight": float(args.unsupported_token_loss_weight),
+        "graph_loss_source": args.graph_loss_source,
+    }
+
+
+def _graph_training_loss(helper, logits, labels, batch, torch, device):
+    if helper is None:
+        return torch.zeros((), device=device), {}
+
+    builder = helper["builder"]
+    evidence_texts = _graph_loss_evidence_texts(batch, source=helper["graph_loss_source"])
+    constraints = [builder.build(text) for text in evidence_texts]
+
+    safe_labels = labels.clamp_min(0)
+    valid_mask = labels.ne(-100)
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    token_nll = -log_probs.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1)
+
+    graph_token_loss = torch.zeros((), device=device)
+    unsupported_loss = torch.zeros((), device=device)
+    graph_token_rows = 0
+    unsupported_rows = 0
+    probs = None
+
+    for row_idx, constraint in enumerate(constraints):
+        row_valid = valid_mask[row_idx]
+        if constraint.supported_token_ids and helper["graph_token_loss_weight"] > 0.0:
+            supported = torch.tensor(
+                sorted(constraint.supported_token_ids),
+                dtype=torch.long,
+                device=device,
+            )
+            support_mask = row_valid & torch.isin(safe_labels[row_idx], supported)
+            if support_mask.any():
+                graph_token_loss = graph_token_loss + token_nll[row_idx][support_mask].mean()
+                graph_token_rows += 1
+
+        if constraint.penalized_token_ids and helper["unsupported_token_loss_weight"] > 0.0:
+            if probs is None:
+                probs = torch.nn.functional.softmax(logits, dim=-1)
+            penalized = torch.tensor(
+                sorted(constraint.penalized_token_ids),
+                dtype=torch.long,
+                device=device,
+            )
+            if row_valid.any():
+                row_mass = probs[row_idx, :, penalized].sum(dim=-1)
+                unsupported_loss = unsupported_loss + row_mass[row_valid].mean()
+                unsupported_rows += 1
+
+    if graph_token_rows:
+        graph_token_loss = graph_token_loss / graph_token_rows
+    if unsupported_rows:
+        unsupported_loss = unsupported_loss / unsupported_rows
+
+    weighted = (
+        helper["graph_token_loss_weight"] * graph_token_loss
+        + helper["unsupported_token_loss_weight"] * unsupported_loss
+    )
+    return weighted, {
+        "graph": f"{graph_token_loss.item():.4f}",
+        "unsup": f"{unsupported_loss.item():.4f}",
+    }
+
+
+def _graph_loss_evidence_texts(batch, *, source: str) -> list[str]:
+    if source == "reference":
+        return [str(report) for report in batch["report"]]
+    return [
+        " ".join(part for part in [str(indication), str(report)] if part)
+        for indication, report in zip(batch["indication"], batch["report"], strict=True)
+    ]
 
 
 def _gpu_progress(torch, device) -> dict[str, str]:

@@ -232,6 +232,8 @@ class R2GenT5Dataset:
         result: dict[str, object] = {
             "study_id": example.study_id,
             "image": image,
+            "indication": example.indication,
+            "report": example.report,
         }
         if self.include_labels:
             target = f"{self.target_prefix}{example.report}".strip()
@@ -254,6 +256,8 @@ def collate_r2gen_t5_batch(batch: list[dict[str, object]]) -> dict[str, object]:
     result = {
         "study_id": [item["study_id"] for item in batch],
         "image": torch.stack([item["image"] for item in batch]),
+        "indication": [item["indication"] for item in batch],
+        "report": [item["report"] for item in batch],
     }
     if "labels" in batch[0]:
         result["labels"] = torch.stack([item["labels"] for item in batch])

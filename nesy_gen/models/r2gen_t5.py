@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import warnings
 from typing import Sequence
 
 from nesy_gen.data.schema import RadiologyExample
@@ -16,7 +17,7 @@ class R2GenT5Config:
     freeze_visual_encoder: bool = False
     image_size: int = 224
     max_target_length: int = 160
-    visual_seq_len: int = 512
+    visual_seq_len: int = 512  # retained for config file compatibility; no longer used
     dropout_prob: float = 0.1
     target_prefix: str = "generate report: "
 
@@ -51,9 +52,10 @@ def require_r2gen_t5_dependencies():
 class R2GenT5Model:
     """R2Gen-style visual encoder plus T5 decoder.
 
-    This follows the attached notebook's core idea: a ResNet visual extractor
-    projects image features into T5's encoder hidden size, then T5 decodes the
-    report from those visual features.
+    The visual backbone produces a spatial feature map (e.g. 7×7 = 49 patch
+    tokens for a 224×224 input).  Those patch tokens are projected into T5's
+    encoder hidden size and used as the encoder sequence, so T5 cross-attention
+    can attend to different image regions when generating each report token.
     """
 
     def __init__(self, config: R2GenT5Config):
@@ -87,14 +89,15 @@ class R2GenT5Model:
         self.device = device
         self.text_model.to(device)
         self.visual_extractor.to(device)
+        self.visual_projection.to(device)
         self.dropout.to(device)
         return self
 
     def train(self):
         self.text_model.train()
+        self.visual_projection.train()
         if self.config.freeze_visual_encoder:
             self.visual_extractor.eval()
-            self.visual_projection.train()
         else:
             self.visual_extractor.train()
         self.dropout.train()
@@ -102,11 +105,13 @@ class R2GenT5Model:
     def eval(self):
         self.text_model.eval()
         self.visual_extractor.eval()
+        self.visual_projection.eval()
         self.dropout.eval()
 
     def parameters(self):
         yield from self.text_model.parameters()
-        yield from (parameter for parameter in self.visual_extractor.parameters() if parameter.requires_grad)
+        yield from (p for p in self.visual_extractor.parameters() if p.requires_grad)
+        yield from (p for p in self.visual_projection.parameters() if p.requires_grad)
 
     def forward(self, images, labels=None):
         encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
@@ -170,13 +175,11 @@ class R2GenT5Model:
         BaseModelOutput = deps["BaseModelOutput"]
 
         images = images.to(self.device)
-        features = self.visual_extractor(images)
-        features = self.dropout(features)
-        features = features.unsqueeze(1).expand(
-            images.shape[0],
-            self.config.visual_seq_len,
-            features.shape[-1],
-        )
+        # visual_extractor returns [B, num_patches, backbone_channels]
+        patch_tokens = self.visual_extractor(images)
+        patch_tokens = self.dropout(patch_tokens)
+        # project backbone channels → T5 d_model
+        features = self.visual_projection(patch_tokens)  # [B, num_patches, d_model]
         attention_mask = torch.ones(
             features.shape[:2],
             dtype=torch.long,
@@ -192,6 +195,7 @@ class R2GenT5Model:
         self.text_model.save_pretrained(out / "text_model")
         self.tokenizer.save_pretrained(out / "tokenizer")
         torch.save(self.visual_extractor.state_dict(), out / "visual_extractor.pt")
+        torch.save(self.visual_projection.state_dict(), out / "visual_projection.pt")
         save_r2gen_t5_config(out / "r2gen_t5_config.json", self.config)
 
     @classmethod
@@ -206,40 +210,82 @@ class R2GenT5Model:
         model = cls(config)
         model.text_model = T5ForConditionalGeneration.from_pretrained(checkpoint / "text_model")
         model.tokenizer = AutoTokenizer.from_pretrained(checkpoint / "tokenizer")
-        state = torch.load(checkpoint / "visual_extractor.pt", map_location="cpu")
-        model.visual_extractor.load_state_dict(state)
+        extractor_state = torch.load(checkpoint / "visual_extractor.pt", map_location="cpu")
+        model.visual_extractor.load_state_dict(extractor_state)
+        proj_path = checkpoint / "visual_projection.pt"
+        if proj_path.exists():
+            proj_state = torch.load(proj_path, map_location="cpu")
+            model.visual_projection.load_state_dict(proj_state)
+        else:
+            warnings.warn(
+                f"No visual_projection.pt found in {checkpoint}. "
+                "Checkpoint was saved with the old architecture — projection weights are random. "
+                "Retrain the model to use spatial patch features.",
+                UserWarning,
+                stacklevel=2,
+            )
         return model
 
 
 def _build_visual_extractor(models, nn, visual_backbone: str, output_dim: int):
+    """Return (spatial_extractor, projection) for the requested backbone.
+
+    spatial_extractor: nn.Module that takes [B, 3, H, W] images and returns
+        [B, num_patches, backbone_channels] patch tokens (no global pooling).
+    projection: nn.Linear(backbone_channels, output_dim) — kept separate so
+        it can be unfrozen independently of the backbone during fine-tuning.
+    """
+
+    class _SpatialExtractor(nn.Module):
+        """Wraps a CNN/ViT backbone; returns [B, N, C] spatial patch tokens."""
+
+        def __init__(self, backbone, *, layout: str = "nchw"):
+            super().__init__()
+            self.backbone = backbone
+            # layout: "nchw" → feature map [B,C,H,W]; "nhwc" → [B,H,W,C] (Swin)
+            self.layout = layout
+
+        def forward(self, x):
+            out = self.backbone(x)
+            if self.layout == "nchw":
+                B, C, H, W = out.shape
+                return out.permute(0, 2, 3, 1).reshape(B, H * W, C)
+            else:
+                B, H, W, C = out.shape
+                return out.reshape(B, H * W, C)
+
     backbone = visual_backbone.lower()
+
     if backbone == "resnet101":
         try:
-            model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
+            base = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
         except AttributeError:  # pragma: no cover - old torchvision
-            model = models.resnet101(pretrained=True)
-        model.fc = nn.Linear(model.fc.in_features, output_dim)
-        return model, model.fc
+            base = models.resnet101(pretrained=True)
+        # Remove avgpool and fc to keep the 7×7 spatial feature map (2048 ch)
+        trunk = nn.Sequential(*list(base.children())[:-2])
+        return _SpatialExtractor(trunk, layout="nchw"), nn.Linear(2048, output_dim)
 
     if backbone == "convnext_base":
-        model = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
-        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, output_dim)
-        return model, model.classifier[-1]
+        base = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
+        # base.features ends at 7×7 × 1024 before avgpool
+        return _SpatialExtractor(base.features, layout="nchw"), nn.Linear(1024, output_dim)
 
     if backbone == "efficientnet_v2_s":
-        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
-        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, output_dim)
-        return model, model.classifier[-1]
+        base = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
+        # base.features ends at 7×7 × 1280 before avgpool
+        return _SpatialExtractor(base.features, layout="nchw"), nn.Linear(1280, output_dim)
 
     if backbone == "swin_t":
-        model = models.swin_t(weights=models.Swin_T_Weights.DEFAULT)
-        model.head = nn.Linear(model.head.in_features, output_dim)
-        return model, model.head
+        base = models.swin_t(weights=models.Swin_T_Weights.DEFAULT)
+        # Swin outputs [B, 7, 7, 768] in NHWC after features + norm
+        trunk = nn.Sequential(base.features, base.norm)
+        return _SpatialExtractor(trunk, layout="nhwc"), nn.Linear(768, output_dim)
 
     if backbone == "densenet121":
-        model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
-        model.classifier = nn.Linear(model.classifier.in_features, output_dim)
-        return model, model.classifier
+        base = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
+        # features output needs ReLU before spatial extraction
+        trunk = nn.Sequential(base.features, nn.ReLU(inplace=True))
+        return _SpatialExtractor(trunk, layout="nchw"), nn.Linear(1024, output_dim)
 
     raise ValueError(
         "Unsupported visual_backbone. Choose one of: "
@@ -281,6 +327,12 @@ class R2GenT5Dataset:
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         )
+        # Pre-compute prefix token length so __getitem__ can mask it efficiently
+        self._prefix_token_len = 0
+        if target_prefix:
+            self._prefix_token_len = len(
+                tokenizer.encode(target_prefix.strip(), add_special_tokens=False)
+            )
 
     def __len__(self) -> int:
         return len(self.examples)
@@ -308,6 +360,9 @@ class R2GenT5Dataset:
             )
             labels = encoding["input_ids"].squeeze(0).clone()
             labels[labels == self.tokenizer.pad_token_id] = -100
+            # Mask the decoder-prompt prefix so the loss only covers the actual report
+            if self._prefix_token_len > 0:
+                labels[: self._prefix_token_len] = -100
             result["labels"] = labels
         return result
 

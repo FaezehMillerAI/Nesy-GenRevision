@@ -284,6 +284,7 @@ def main() -> None:
                 metrics={
                     "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
                     "avg": f"{total_loss / (step + 1):.4f}",
+                    "gen": f"{generation_loss.item():.4f}",
                     **graph_metrics,
                     "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
                     "seen": str(seen_examples),
@@ -326,6 +327,7 @@ def main() -> None:
                     metrics={
                         "loss": f"{loss.item():.4f}",
                         "avg": f"{val_loss / (step + 1):.4f}",
+                        "gen": f"{generation_loss.item():.4f}",
                         **graph_metrics,
                         **_gpu_progress(torch, device),
                     },
@@ -425,7 +427,8 @@ def _graph_training_loss(helper, logits, labels, batch, torch, device):
         + helper["unsupported_token_loss_weight"] * unsupported_loss
     )
     return weighted, {
-        "graph": f"{graph_token_loss.item():.4f}",
+        "graph_raw": f"{graph_token_loss.item():.4f}",
+        "graph_w": f"{weighted.item():.4f}",
         "unsup": f"{unsupported_loss.item():.4f}",
     }
 

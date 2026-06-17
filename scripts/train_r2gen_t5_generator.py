@@ -71,6 +71,16 @@ def main() -> None:
         default="indication_reference",
     )
     parser.add_argument("--fp16", action="store_true")
+    parser.add_argument(
+        "--backbone-learning-rate",
+        type=float,
+        default=None,
+        help=(
+            "Separate LR for the visual backbone when --freeze-visual-encoder is NOT set. "
+            "Typical value: 1/10 of --learning-rate (e.g. 5e-6 when LR=5e-5). "
+            "When omitted the backbone uses the same LR as the rest of the model."
+        ),
+    )
     args = parser.parse_args()
 
     seed_everything(args.seed)
@@ -129,11 +139,38 @@ def main() -> None:
         collate_fn=collate_r2gen_t5_batch,
     )
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-    )
+    backbone_lr = args.backbone_learning_rate
+    if backbone_lr is not None and not args.freeze_visual_encoder:
+        # Differential LR: lower rate for pretrained backbone, full rate for T5 + projection
+        visual_extractor_ids = {id(p) for p in model.visual_extractor.parameters()}
+        param_groups = [
+            {
+                "params": [p for p in model.text_model.parameters() if p.requires_grad],
+                "lr": args.learning_rate,
+            },
+            {
+                "params": [p for p in model.visual_projection.parameters() if p.requires_grad],
+                "lr": args.learning_rate,
+            },
+            {
+                "params": [
+                    p for p in model.visual_extractor.parameters()
+                    if p.requires_grad and id(p) in visual_extractor_ids
+                ],
+                "lr": backbone_lr,
+            },
+        ]
+        print(
+            f"Differential LR: T5+projection={args.learning_rate:.2e}, backbone={backbone_lr:.2e}",
+            flush=True,
+        )
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=args.weight_decay)
+    else:
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+        )
     total_steps = max(1, args.epochs * len(train_loader) // args.gradient_accumulation_steps)
     scheduler = get_linear_schedule_with_warmup(
         optimizer,

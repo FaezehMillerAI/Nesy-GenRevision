@@ -44,7 +44,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["nesy_gen*"]
+include = ["nesy_gen*", "scripts*"]
 
 [tool.ruff]
 line-length = 100

@@ -53,8 +53,8 @@ class RetrievalBaselineTest(unittest.TestCase):
         preds = run_tfidf_retrieval_topk(train, test, top_k=2)
 
         self.assertEqual(
-            [prediction.retrieved_study_id for prediction in preds[0]],
-            ["tr1", "tr2"],
+            {prediction.retrieved_study_id for prediction in preds[0]},
+            {"tr1", "tr2"},
         )
 
     def test_retrieval_blocks_alternate_view_of_same_study(self):

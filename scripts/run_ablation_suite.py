@@ -19,12 +19,20 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--dataset-name", required=True)
     parser.add_argument("--generator-checkpoint-dir")
+    parser.add_argument(
+        "--retrieval-mode",
+        choices=["metadata", "visual"],
+        default="visual",
+        help="Use frozen-image retrieval for primary IU-Xray experiments.",
+    )
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=140)
     parser.add_argument("--dry-run", action="store_true", help="Write commands without executing them.")
     args = parser.parse_args()
+    if args.retrieval_mode == "visual" and not args.generator_checkpoint_dir:
+        parser.error("--retrieval-mode visual requires --generator-checkpoint-dir")
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -178,6 +186,8 @@ def build_commands(args) -> list[dict[str, object]]:
             args.split,
             "--retrieval-top-k",
             str(variant["retrieval_top_k"]),
+            "--retrieval-mode",
+            args.retrieval_mode,
             "--decoding-mode",
             str(variant["decoding_mode"]),
             "--selection-objective",

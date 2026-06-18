@@ -11,21 +11,25 @@ neuro-symbolic layer around it:
 
 1. **Visual report generator:** a frozen visual encoder produces spatial image
    tokens. A T5 decoder generates candidate reports from those image tokens.
-2. **Retrieval evidence:** a leakage-safe retrieval module retrieves similar
-   training reports using inference-available fields, not the test reference.
+2. **Retrieval evidence:** the frozen visual encoder retrieves similar training
+   images and their reports. Retrieval uses image features available at
+   inference and never reads the test reference.
 3. **PrimeKG entity grounding:** generated and retrieved report concepts are
    linked to PrimeKG node identifiers with negation awareness.
 4. **Radiology PrimeKG subgraph:** a reusable radiology-focused PrimeKG cache is
-   built once from report entities and radiology seed terms.
+   built from training-report entities and fixed radiology seed terms. Validation
+   and test references never influence subgraph construction.
 5. **LTN-style consistency audit:** each candidate is scored using fuzzy graph
    clauses for biological/temporal support, finding-diagnosis connectivity, and
    anatomy/finding type compatibility.
 6. **Consistency gate:** retrieval evidence, graph consistency, and entity-level
    support are combined to select the final report.
 
-The implementation supports optional graph-aware token training and optional
-soft graph-constrained decoding. These are ablation variables, not mandatory
-assumptions.
+During retrieval-conditioned training, each image receives reports from
+leave-one-study-out frozen-image neighbors. Their T5 representations are
+concatenated with visual patch representations. PrimeKG-linked target tokens
+receive an optional auxiliary loss. Soft graph-constrained decoding remains an
+ablation variable.
 
 ## Main Scientific Claims
 
@@ -90,11 +94,10 @@ available at inference time, and \(A(c)\) is the consistency-gate acceptance
 signal. The candidate is still PrimeKG-audited; the stronger retrieval weight
 only makes the final selection more lexical-overlap friendly.
 
-Retrieval is decontaminated before candidate generation: training records with
-the same study identifier or an exact normalized reference-report duplicate are
-removed from the candidate pool. The reference report is never used as retrieval
-query text; it is used only to block exact duplicate contamination during
-evaluation.
+Retrieval excludes the same underlying study, including alternate views, without
+reading the query report. Split-level duplicate reports are measured separately
+by the leakage audit; test references are never used to construct or filter the
+candidate pool.
 
 Report this profile alongside the balanced graph profile. If it reaches the
 BLEU target, the claim should be:

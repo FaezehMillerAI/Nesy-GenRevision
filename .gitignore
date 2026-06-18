@@ -13,6 +13,7 @@ env/
 /data/
 /dataverse_files/
 artifacts/
+/outputs/
 checkpoints/
 runs/
 wandb/

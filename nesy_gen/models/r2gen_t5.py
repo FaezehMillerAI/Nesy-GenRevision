@@ -20,6 +20,9 @@ class R2GenT5Config:
     visual_seq_len: int = 512  # retained for config file compatibility; no longer used
     dropout_prob: float = 0.1
     target_prefix: str = "generate report: "
+    use_retrieval_conditioning: bool = False
+    max_evidence_length: int = 192
+    evidence_prefix: str = "retrieved evidence: "
 
 
 def require_r2gen_t5_dependencies():
@@ -117,8 +120,12 @@ class R2GenT5Model:
         yield from (p for p in self.visual_extractor.parameters() if p.requires_grad)
         yield from (p for p in self.visual_projection.parameters() if p.requires_grad)
 
-    def forward(self, images, labels=None):
-        encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
+    def forward(self, images, labels=None, evidence_input_ids=None, evidence_attention_mask=None):
+        encoder_outputs, attention_mask = self._multimodal_encoder_outputs(
+            images,
+            evidence_input_ids=evidence_input_ids,
+            evidence_attention_mask=evidence_attention_mask,
+        )
         return self.text_model(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
@@ -141,8 +148,14 @@ class R2GenT5Model:
         length_penalty: float = 1.0,
         num_beam_groups: int = 1,
         diversity_penalty: float = 0.0,
+        evidence_input_ids=None,
+        evidence_attention_mask=None,
     ):
-        encoder_outputs, attention_mask = self._visual_encoder_outputs(images)
+        encoder_outputs, attention_mask = self._multimodal_encoder_outputs(
+            images,
+            evidence_input_ids=evidence_input_ids,
+            evidence_attention_mask=evidence_attention_mask,
+        )
         kwargs = {
             "encoder_outputs": encoder_outputs,
             "attention_mask": attention_mask,
@@ -172,6 +185,31 @@ class R2GenT5Model:
                 kwargs["num_beam_groups"] = num_beam_groups
                 kwargs["diversity_penalty"] = diversity_penalty
         return self.text_model.generate(**kwargs)
+
+    def _multimodal_encoder_outputs(
+        self,
+        images,
+        *,
+        evidence_input_ids=None,
+        evidence_attention_mask=None,
+    ):
+        deps = require_r2gen_t5_dependencies()
+        torch = deps["torch"]
+        BaseModelOutput = deps["BaseModelOutput"]
+        visual_outputs, visual_mask = self._visual_encoder_outputs(images)
+        if evidence_input_ids is None:
+            return visual_outputs, visual_mask
+        evidence_input_ids = evidence_input_ids.to(self.device)
+        evidence_attention_mask = evidence_attention_mask.to(self.device)
+        text_model = getattr(self.text_model, "_orig_mod", self.text_model)
+        evidence_outputs = text_model.encoder(
+            input_ids=evidence_input_ids,
+            attention_mask=evidence_attention_mask,
+            return_dict=True,
+        ).last_hidden_state
+        hidden = torch.cat([visual_outputs.last_hidden_state, evidence_outputs], dim=1)
+        attention_mask = torch.cat([visual_mask, evidence_attention_mask], dim=1)
+        return BaseModelOutput(last_hidden_state=hidden), attention_mask
 
     def _visual_encoder_outputs(self, images):
         deps = require_r2gen_t5_dependencies()
@@ -376,6 +414,9 @@ class R2GenT5Dataset:
         include_labels: bool = True,
         target_prefix: str = "generate report: ",
         image_size: int = 224,
+        evidence_by_study_id: dict[str, list[str]] | None = None,
+        max_evidence_length: int = 192,
+        evidence_prefix: str = "retrieved evidence: ",
     ) -> None:
         deps = require_r2gen_t5_dependencies()
         transforms = deps["transforms"]
@@ -386,6 +427,9 @@ class R2GenT5Dataset:
         self.include_labels = include_labels
         self.target_prefix = target_prefix
         self.image_size = image_size
+        self.evidence_by_study_id = evidence_by_study_id
+        self.max_evidence_length = max_evidence_length
+        self.evidence_prefix = evidence_prefix
         self.image_transform = transforms.Compose(
             [
                 transforms.Resize((image_size, image_size)),
@@ -430,6 +474,18 @@ class R2GenT5Dataset:
             if self._prefix_token_len > 0:
                 labels[: self._prefix_token_len] = -100
             result["labels"] = labels
+        if self.evidence_by_study_id is not None:
+            evidence_reports = self.evidence_by_study_id.get(example.study_id, [])
+            evidence = f"{self.evidence_prefix}{' '.join(evidence_reports)}".strip()
+            encoded_evidence = self.tokenizer(
+                evidence,
+                return_tensors="pt",
+                max_length=self.max_evidence_length,
+                truncation=True,
+                padding="max_length",
+            )
+            result["evidence_input_ids"] = encoded_evidence["input_ids"].squeeze(0)
+            result["evidence_attention_mask"] = encoded_evidence["attention_mask"].squeeze(0)
         return result
 
 
@@ -444,6 +500,13 @@ def collate_r2gen_t5_batch(batch: list[dict[str, object]]) -> dict[str, object]:
     }
     if "labels" in batch[0]:
         result["labels"] = torch.stack([item["labels"] for item in batch])
+    if "evidence_input_ids" in batch[0]:
+        result["evidence_input_ids"] = torch.stack(
+            [item["evidence_input_ids"] for item in batch]
+        )
+        result["evidence_attention_mask"] = torch.stack(
+            [item["evidence_attention_mask"] for item in batch]
+        )
     return result
 
 

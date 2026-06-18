@@ -135,10 +135,10 @@ For the BLEU-oriented graph setting, use the emitted
 `graph_constrained_bleu_guarded` variant and report it together with the balanced
 graph-constrained variant.
 
-Retrieval candidates are decontaminated by default: same-study matches and exact
-normalized duplicate reference reports are removed from the training retrieval
-pool before candidate generation. This preserves the high-performing RAG setup
-while guarding against split leakage.
+Primary RAG runs use frozen-image retrieval and exclude the same underlying
+study, including alternate views. The query reference is never read during
+retrieval or candidate filtering. Cross-split duplicate reports are reported by
+the separate leakage audit instead of being removed using hidden test labels.
 
 ## Important Claim Boundary
 

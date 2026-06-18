@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nesy_gen.data.schema import RadiologyExample, load_jsonl
+from nesy_gen.baselines.visual_retrieval import run_visual_retrieval_topk
 from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBuilder
 from nesy_gen.generation.rag import RagCandidate, retrieval_candidates, select_primekg_verified_report
 from nesy_gen.kg.entity_linking import LexicalEntityLinker
@@ -38,6 +39,12 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--retrieval-top-k", type=int, default=5)
+    parser.add_argument(
+        "--retrieval-mode",
+        choices=["metadata", "visual"],
+        default="metadata",
+        help="Visual mode is reference-blind and recommended when indications are unavailable.",
+    )
     parser.add_argument("--r2gen-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--generator-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--r2gen-num-candidates", "--generator-num-candidates", dest="generator_num_candidates", type=int, default=0)
@@ -90,8 +97,41 @@ def main() -> None:
     if not train or not queries:
         raise ValueError("Need non-empty train examples and query examples.")
 
-    print("Building retrieval candidates...", flush=True)
-    candidate_map = retrieval_candidates(train, queries, top_k=args.retrieval_top_k)
+    generator_model = None
+    if args.generator_checkpoint_dir:
+        generator_model = R2GenT5Model.from_pretrained(args.generator_checkpoint_dir)
+        deps = require_r2gen_t5_dependencies()
+        torch = deps["torch"]
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        generator_model.to(device)
+        generator_model.eval()
+
+    print(f"Building {args.retrieval_mode} retrieval candidates...", flush=True)
+    if args.retrieval_mode == "visual":
+        if generator_model is None:
+            raise ValueError("Visual retrieval requires --generator-checkpoint-dir.")
+        retrieved = run_visual_retrieval_topk(
+            generator_model,
+            train,
+            queries,
+            top_k=args.retrieval_top_k,
+            batch_size=args.generator_batch_size,
+        )
+        candidate_map = {
+            example.study_id: [
+                RagCandidate(
+                    source="visual_retrieval",
+                    source_rank=row.rank,
+                    prediction=row.prediction,
+                    evidence_score=max(0.0, row.similarity),
+                    retrieved_study_id=row.retrieved_study_id,
+                )
+                for row in rows
+            ]
+            for example, rows in zip(queries, retrieved, strict=True)
+        }
+    else:
+        candidate_map = retrieval_candidates(train, queries, top_k=args.retrieval_top_k)
 
     if args.generator_checkpoint_dir and args.generator_num_candidates > 0:
         print("Adding Vision-T5 generated candidates...", flush=True)
@@ -117,6 +157,7 @@ def main() -> None:
             unsupported_token_penalty=args.unsupported_token_penalty,
             constraint_max_terms=args.constraint_max_terms,
             generated_evidence_score=args.generated_evidence_score,
+            preloaded_model=generator_model,
         )
         for study_id, candidates in generated_map.items():
             candidate_map.setdefault(study_id, []).extend(candidates)
@@ -183,15 +224,19 @@ def generate_r2gen_candidates(
     unsupported_token_penalty: float = 0.0,
     constraint_max_terms: int = 2500,
     generated_evidence_score: float = 0.50,
+    preloaded_model=None,
 ) -> dict[str, list[RagCandidate]]:
     deps = require_r2gen_t5_dependencies()
     torch = deps["torch"]
     DataLoader = deps["DataLoader"]
     LogitsProcessorList = deps["LogitsProcessorList"]
-    model = R2GenT5Model.from_pretrained(checkpoint_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    model.eval()
+    model = preloaded_model or R2GenT5Model.from_pretrained(checkpoint_dir)
+    device = model.device if preloaded_model is not None else torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+    if preloaded_model is None:
+        model.to(device)
+        model.eval()
     example_by_id = {example.study_id: example for example in examples}
     constraint_builder = None
     if decoding_mode == "graph_constrained":
@@ -214,6 +259,16 @@ def generate_r2gen_candidates(
             include_labels=False,
             target_prefix=model.config.target_prefix,
             image_size=model.config.image_size,
+            evidence_by_study_id=(
+                {
+                    study_id: [candidate.prediction for candidate in candidates]
+                    for study_id, candidates in (retrieval_candidate_map or {}).items()
+                }
+                if model.config.use_retrieval_conditioning
+                else None
+            ),
+            max_evidence_length=model.config.max_evidence_length,
+            evidence_prefix=model.config.evidence_prefix,
         ),
         batch_size=batch_size,
         shuffle=False,
@@ -254,6 +309,8 @@ def generate_r2gen_candidates(
                 num_beam_groups=num_beam_groups,
                 diversity_penalty=diversity_penalty,
                 logits_processor=logits_processor,
+                evidence_input_ids=batch.get("evidence_input_ids"),
+                evidence_attention_mask=batch.get("evidence_attention_mask"),
             )
             texts = decode_r2gen_predictions(
                 model.tokenizer,

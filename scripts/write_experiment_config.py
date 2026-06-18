@@ -25,6 +25,8 @@ def main() -> None:
     parser.add_argument("--r2gen-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--generator-checkpoint-dir", dest="generator_checkpoint_dir")
     parser.add_argument("--retrieval-top-k", type=int, default=5)
+    parser.add_argument("--retrieval-mode", choices=["metadata", "visual"], default="metadata")
+    parser.add_argument("--retrieval-conditioning", action="store_true")
     parser.add_argument("--r2gen-num-candidates", "--generator-num-candidates", dest="generator_num_candidates", type=int, default=4)
     parser.add_argument("--vision-backbone", default="")
     parser.add_argument("--text-model-name", default="")
@@ -72,6 +74,8 @@ def main() -> None:
         "text_model_name": args.text_model_name,
         "freeze_visual_encoder": args.freeze_visual_encoder,
         "retrieval_top_k": args.retrieval_top_k,
+        "retrieval_mode": args.retrieval_mode,
+        "retrieval_conditioning": args.retrieval_conditioning,
         "generator_num_candidates": args.generator_num_candidates,
         "decoding_mode": args.decoding_mode,
         "graph_token_boost": args.graph_token_boost,
@@ -96,7 +100,8 @@ def main() -> None:
             "primekg_token_training": "optional Vision-T5 training regularizer that upweights PrimeKG-linked entity tokens in references",
             "vision_t5": "raw image-to-report generator",
             "r2gen_t5": "deprecated alias for the raw image-to-report generator",
-            "retrieval": "TF-IDF retrieval baseline",
+            "retrieval": "reference-blind metadata or frozen-image retrieval baseline",
+            "visual_rag_conditioning": "leave-one-study-out frozen-image retrieval evidence encoded jointly with visual patches",
         },
         "reviewer_coverage": [
             "reproducible config",

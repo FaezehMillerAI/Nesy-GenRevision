@@ -12,6 +12,7 @@ from tqdm.auto import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nesy_gen.data.schema import load_jsonl
+from nesy_gen.baselines.visual_retrieval import visual_evidence_map
 from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBuilder
 from nesy_gen.models.r2gen_t5 import (
     R2GenT5Config,
@@ -37,6 +38,12 @@ def main() -> None:
     parser.add_argument("--freeze-visual-encoder", action="store_true")
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=2,
+        help="Stop after this many non-improving validation epochs; 0 disables early stopping.",
+    )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
@@ -45,6 +52,14 @@ def main() -> None:
     parser.add_argument("--visual-seq-len", type=int, default=128)
     parser.add_argument("--dropout-prob", type=float, default=0.1)
     parser.add_argument("--target-prefix", default="generate report: ")
+    parser.add_argument(
+        "--retrieval-conditioning",
+        action="store_true",
+        help="Condition T5 on reports retrieved solely from frozen image features.",
+    )
+    parser.add_argument("--retrieval-top-k", type=int, default=3)
+    parser.add_argument("--max-evidence-length", type=int, default=192)
+    parser.add_argument("--retrieval-batch-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--max-train-examples", type=int)
     parser.add_argument("--max-val-examples", type=int)
@@ -125,10 +140,40 @@ def main() -> None:
         visual_seq_len=args.visual_seq_len,
         dropout_prob=args.dropout_prob,
         target_prefix=args.target_prefix,
+        use_retrieval_conditioning=args.retrieval_conditioning,
+        max_evidence_length=args.max_evidence_length,
     )
     model = R2GenT5Model(config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+
+    train_evidence = None
+    val_evidence = None
+    if args.retrieval_conditioning:
+        if not args.freeze_visual_encoder:
+            raise ValueError(
+                "--retrieval-conditioning requires --freeze-visual-encoder so retrieval "
+                "features remain stable and reproducible during training."
+            )
+        print("Building leave-one-study-out visual RAG evidence...", flush=True)
+        train_evidence = visual_evidence_map(
+            model,
+            train_examples,
+            train_examples,
+            top_k=args.retrieval_top_k,
+            batch_size=args.retrieval_batch_size,
+        )
+        val_evidence = visual_evidence_map(
+            model,
+            train_examples,
+            val_examples,
+            top_k=args.retrieval_top_k,
+            batch_size=args.retrieval_batch_size,
+        )
+        print(
+            f"Visual RAG evidence ready: train={len(train_evidence)} val={len(val_evidence)}",
+            flush=True,
+        )
 
     # Mixed-precision setup: BF16 preferred on A100 (no scaler), FP16 elsewhere.
     use_bf16 = args.bf16 and device.type == "cuda"
@@ -163,6 +208,8 @@ def main() -> None:
             max_target_length=args.max_target_length,
             target_prefix=args.target_prefix,
             image_size=args.image_size,
+            evidence_by_study_id=train_evidence,
+            max_evidence_length=args.max_evidence_length,
         ),
         batch_size=args.batch_size,
         shuffle=True,
@@ -176,6 +223,8 @@ def main() -> None:
             max_target_length=args.max_target_length,
             target_prefix=args.target_prefix,
             image_size=args.image_size,
+            evidence_by_study_id=val_evidence,
+            max_evidence_length=args.max_evidence_length,
         ),
         batch_size=args.batch_size,
         shuffle=False,
@@ -237,7 +286,11 @@ def main() -> None:
             flush=True,
         )
 
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
     history = []
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0.0
@@ -253,7 +306,12 @@ def main() -> None:
             images = batch["image"].to(device)
             labels = batch["labels"].to(device)
             with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
-                outputs = model.forward(images, labels=labels)
+                outputs = model.forward(
+                    images,
+                    labels=labels,
+                    evidence_input_ids=batch.get("evidence_input_ids"),
+                    evidence_attention_mask=batch.get("evidence_attention_mask"),
+                )
                 generation_loss = outputs.loss
                 graph_loss, graph_metrics = _graph_training_loss(
                     graph_loss_helper,
@@ -304,7 +362,12 @@ def main() -> None:
             for step, batch in enumerate(val_progress):
                 images = batch["image"].to(device)
                 labels = batch["labels"].to(device)
-                outputs = model.forward(images, labels=labels)
+                outputs = model.forward(
+                    images,
+                    labels=labels,
+                    evidence_input_ids=batch.get("evidence_input_ids"),
+                    evidence_attention_mask=batch.get("evidence_attention_mask"),
+                )
                 generation_loss = outputs.loss
                 graph_loss, graph_metrics = _graph_training_loss(
                     graph_loss_helper,
@@ -340,12 +403,36 @@ def main() -> None:
         }
         history.append(row)
         print(row)
+        if row["val_loss"] < best_val_loss:
+            best_val_loss = row["val_loss"]
+            epochs_without_improvement = 0
+            model.save_pretrained(out)
+            (out / "best_checkpoint.json").write_text(
+                json.dumps(
+                    {
+                        "epoch": row["epoch"],
+                        "val_loss": row["val_loss"],
+                        "selection_rule": "minimum validation loss",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(f"Saved new best checkpoint: epoch={row['epoch']} val={best_val_loss:.4f}")
+        else:
+            epochs_without_improvement += 1
+            if (
+                args.early_stopping_patience > 0
+                and epochs_without_improvement >= args.early_stopping_patience
+            ):
+                print(
+                    f"Early stopping after {epochs_without_improvement} non-improving epochs.",
+                    flush=True,
+                )
+                break
 
-    out = Path(args.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(out)
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    print(f"Saved Vision-T5 checkpoint to {out}")
+    print(f"Best Vision-T5 checkpoint saved to {out} (val_loss={best_val_loss:.4f})")
 
 
 def _build_graph_loss_helper(args, model):

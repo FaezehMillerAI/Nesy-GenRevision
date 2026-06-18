@@ -23,8 +23,6 @@ class RetrievalPrediction:
 def run_tfidf_retrieval(
     train_examples: list[RadiologyExample],
     query_examples: list[RadiologyExample],
-    *,
-    exclude_reference_duplicates: bool = True,
 ) -> list[RetrievalPrediction]:
     return [
         predictions[0]
@@ -32,7 +30,6 @@ def run_tfidf_retrieval(
             train_examples,
             query_examples,
             top_k=1,
-            exclude_reference_duplicates=exclude_reference_duplicates,
         )
         if predictions
     ]
@@ -43,7 +40,6 @@ def run_tfidf_retrieval_topk(
     query_examples: list[RadiologyExample],
     *,
     top_k: int = 5,
-    exclude_reference_duplicates: bool = True,
 ) -> list[list[RetrievalPrediction]]:
     if not train_examples:
         raise ValueError("train_examples cannot be empty")
@@ -60,13 +56,13 @@ def run_tfidf_retrieval_topk(
         blocked = _blocked_train_indices(
             train_examples,
             example,
-            exclude_reference_duplicates=exclude_reference_duplicates,
         )
-        ranked = [
-            idx
-            for idx in sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)
-            if idx not in blocked
-        ][:top_k]
+        ranked = _unique_study_ranking(
+            train_examples,
+            sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True),
+            blocked=blocked,
+            top_k=top_k,
+        )
         predictions = []
         for rank, train_idx in enumerate(ranked, start=1):
             retrieved = train_examples[train_idx]
@@ -103,31 +99,38 @@ def _query_text(example: RadiologyExample) -> str:
 def _blocked_train_indices(
     train_examples: list[RadiologyExample],
     query: RadiologyExample,
-    *,
-    exclude_reference_duplicates: bool,
 ) -> set[int]:
-    """Remove obvious split contamination from retrieval candidates.
+    """Block the query study without consulting its hidden reference report."""
 
-    The query report is never used to build the retrieval query.  We only use it
-    here as an evaluation-time decontamination guard: if an identical report or
-    identical study identifier appears in the training pool, it should not be
-    available as a retrieved candidate because it can inflate lexical metrics.
-    """
-
-    query_report = _normalize_report(query.report)
     blocked: set[int] = set()
     for idx, train in enumerate(train_examples):
-        if train.study_id == query.study_id:
+        if _study_key(train) == _study_key(query):
             blocked.add(idx)
-            continue
-        if exclude_reference_duplicates and query_report:
-            if _normalize_report(train.report) == query_report:
-                blocked.add(idx)
     return blocked
 
 
-def _normalize_report(text: str) -> str:
-    return " ".join(TOKEN_RE.findall(str(text).lower()))
+def _study_key(example: RadiologyExample) -> str:
+    return str(example.metadata.get("r2gen_id") or example.study_id)
+
+
+def _unique_study_ranking(
+    examples: list[RadiologyExample],
+    ranked_indices,
+    *,
+    blocked: set[int],
+    top_k: int,
+) -> list[int]:
+    selected: list[int] = []
+    seen_studies: set[str] = set()
+    for idx in ranked_indices:
+        key = _study_key(examples[idx])
+        if idx in blocked or key in seen_studies:
+            continue
+        selected.append(idx)
+        seen_studies.add(key)
+        if len(selected) == top_k:
+            break
+    return selected
 
 
 def _tokens(text: str) -> list[str]:

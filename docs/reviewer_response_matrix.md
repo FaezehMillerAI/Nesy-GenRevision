@@ -51,7 +51,7 @@ The suite creates:
 
 | Variant | What it isolates |
 | --- | --- |
-| `retrieval` | Leakage-safe retrieval baseline |
+| `retrieval` | Reference-blind metadata baseline; visual retrieval is used in primary RAG runs |
 | `vision_t5_standard` | Generator quality without retrieval or graph verification |
 | `rag_primekg_gate` | RAG candidates plus PrimeKG/LTN/gate selection |
 | `graph_constrained_balanced` | Soft graph-constrained decoding plus balanced graph/evidence selection |

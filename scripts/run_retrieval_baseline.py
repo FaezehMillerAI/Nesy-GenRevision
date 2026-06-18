@@ -19,11 +19,6 @@ def main() -> None:
     parser.add_argument("--output-csv", required=True)
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
-    parser.add_argument(
-        "--allow-reference-duplicates",
-        action="store_true",
-        help="Disable exact-reference duplicate filtering. Use only for diagnostics.",
-    )
     args = parser.parse_args()
 
     examples = load_jsonl(args.manifest)
@@ -31,11 +26,7 @@ def main() -> None:
     queries = [example for example in examples if example.split == args.split]
     if args.limit is not None:
         queries = queries[: args.limit]
-    predictions = run_tfidf_retrieval(
-        train,
-        queries,
-        exclude_reference_duplicates=not args.allow_reference_duplicates,
-    )
+    predictions = run_tfidf_retrieval(train, queries)
     frame = pd.DataFrame([asdict(prediction) for prediction in predictions])
     out = Path(args.output_csv)
     out.parent.mkdir(parents=True, exist_ok=True)

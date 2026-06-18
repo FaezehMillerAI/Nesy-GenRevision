@@ -50,6 +50,11 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, help="Dataset JSONL manifest for seed extraction.")
     parser.add_argument("--output-dir", required=True, help="Folder where kg.csv and nodes.csv will be saved.")
     parser.add_argument("--hops", type=int, default=1, help="Incident-edge expansion hops around seed nodes.")
+    parser.add_argument(
+        "--seed-split",
+        default="train",
+        help="Manifest split allowed to contribute report-derived seed nodes.",
+    )
     parser.add_argument("--max-examples", type=int, help="Optional manifest examples to scan for seeds.")
     parser.add_argument("--seed-terms-json", help="Optional JSON list of additional radiology seed terms.")
     args = parser.parse_args()
@@ -72,7 +77,9 @@ def main() -> None:
     vocab["alias"] = vocab["node_name"]
     linker = LexicalEntityLinker(vocab)
 
-    examples = load_jsonl(args.manifest)
+    examples = [
+        example for example in load_jsonl(args.manifest) if example.split == args.seed_split
+    ]
     if args.max_examples is not None:
         examples = examples[: args.max_examples]
 
@@ -129,6 +136,7 @@ def main() -> None:
         "source_primekg_dir": str(primekg_dir),
         "source_kg_csv": str(kg_csv),
         "manifest": str(args.manifest),
+        "seed_split": args.seed_split,
         "hops": args.hops,
         "manifest_examples_scanned": len(examples),
         "seed_nodes": len(seed_nodes),
@@ -143,4 +151,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

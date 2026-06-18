@@ -39,12 +39,11 @@ class RetrievalBaselineTest(unittest.TestCase):
             train,
             test,
             top_k=2,
-            exclude_reference_duplicates=False,
         )
 
         self.assertEqual([prediction.similarity for prediction in preds[0]], [0.0, 0.0])
 
-    def test_retrieval_filters_exact_reference_duplicates(self):
+    def test_retrieval_never_reads_reference_to_filter_candidates(self):
         train = [
             RadiologyExample("tr1", None, "cough", "Exact hidden reference.", "train"),
             RadiologyExample("tr2", None, "cough", "Different report.", "train"),
@@ -53,7 +52,45 @@ class RetrievalBaselineTest(unittest.TestCase):
 
         preds = run_tfidf_retrieval_topk(train, test, top_k=2)
 
-        self.assertEqual([prediction.retrieved_study_id for prediction in preds[0]], ["tr2"])
+        self.assertEqual(
+            [prediction.retrieved_study_id for prediction in preds[0]],
+            ["tr1", "tr2"],
+        )
+
+    def test_retrieval_blocks_alternate_view_of_same_study(self):
+        train = [
+            RadiologyExample(
+                "study_1_0", None, "cough", "Same study.", "train", {"r2gen_id": "study_1"}
+            ),
+            RadiologyExample(
+                "study_2", None, "cough", "Other study.", "train", {"r2gen_id": "study_2"}
+            ),
+        ]
+        query = [
+            RadiologyExample(
+                "study_1_1", None, "cough", "Hidden.", "test", {"r2gen_id": "study_1"}
+            )
+        ]
+
+        preds = run_tfidf_retrieval_topk(train, query, top_k=2)
+
+        self.assertEqual([row.retrieved_study_id for row in preds[0]], ["study_2"])
+
+    def test_topk_contains_unique_underlying_studies(self):
+        train = [
+            RadiologyExample("s1_0", None, "cough", "A", "train", {"r2gen_id": "s1"}),
+            RadiologyExample("s1_1", None, "cough", "A", "train", {"r2gen_id": "s1"}),
+            RadiologyExample("s2_0", None, "cough", "B", "train", {"r2gen_id": "s2"}),
+        ]
+        query = [RadiologyExample("q", None, "cough", "Hidden", "test")]
+
+        preds = run_tfidf_retrieval_topk(train, query, top_k=3)
+
+        self.assertEqual(len(preds[0]), 2)
+        self.assertEqual(
+            {row.retrieved_study_id.rsplit("_", 1)[0] for row in preds[0]},
+            {"s1", "s2"},
+        )
 
 
 if __name__ == "__main__":

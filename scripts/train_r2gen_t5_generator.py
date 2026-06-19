@@ -162,6 +162,7 @@ def main() -> None:
             train_examples,
             top_k=args.retrieval_top_k,
             batch_size=args.retrieval_batch_size,
+            progress_desc="train visual RAG evidence",
         )
         val_evidence = visual_evidence_map(
             model,
@@ -169,6 +170,7 @@ def main() -> None:
             val_examples,
             top_k=args.retrieval_top_k,
             batch_size=args.retrieval_batch_size,
+            progress_desc="validation visual RAG evidence",
         )
         print(
             f"Visual RAG evidence ready: train={len(train_evidence)} val={len(val_evidence)}",

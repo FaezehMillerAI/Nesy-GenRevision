@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from tqdm.auto import tqdm
+
 from nesy_gen.baselines.retrieval import RetrievalPrediction
 from nesy_gen.data.schema import RadiologyExample
 from nesy_gen.models.r2gen_t5 import R2GenT5Dataset, collate_r2gen_t5_batch
@@ -14,6 +16,7 @@ def run_visual_retrieval_topk(
     *,
     top_k: int = 5,
     batch_size: int = 16,
+    progress_desc: str = "visual retrieval",
 ) -> list[list[RetrievalPrediction]]:
     """Retrieve training reports using only frozen visual representations."""
 
@@ -26,15 +29,31 @@ def run_visual_retrieval_topk(
 
     deps = model_dependencies()
     torch = deps["torch"]
-    train_features = extract_visual_embeddings(model, train, batch_size=batch_size)
+    train_features = extract_visual_embeddings(
+        model,
+        train,
+        batch_size=batch_size,
+        progress_desc=f"{progress_desc}: training index",
+    )
     if train is queries or _same_example_sequence(train, queries):
         query_features = train_features
     else:
-        query_features = extract_visual_embeddings(model, queries, batch_size=batch_size)
+        query_features = extract_visual_embeddings(
+            model,
+            queries,
+            batch_size=batch_size,
+            progress_desc=f"{progress_desc}: query images",
+        )
 
     predictions: list[list[RetrievalPrediction]] = []
     # Chunked scoring avoids materializing an N_query x N_train matrix for MIMIC-CXR.
-    for start in range(0, len(queries), 256):
+    query_chunks = range(0, len(queries), 256)
+    for start in tqdm(
+        query_chunks,
+        total=(len(queries) + 255) // 256,
+        desc=f"{progress_desc}: nearest neighbours",
+        dynamic_ncols=True,
+    ):
         scores = query_features[start : start + 256] @ train_features.T
         for local_idx, row_scores in enumerate(scores):
             query = queries[start + local_idx]
@@ -69,6 +88,7 @@ def visual_evidence_map(
     *,
     top_k: int = 3,
     batch_size: int = 16,
+    progress_desc: str = "visual RAG evidence",
 ) -> dict[str, list[str]]:
     rows = run_visual_retrieval_topk(
         model,
@@ -76,6 +96,7 @@ def visual_evidence_map(
         query_examples,
         top_k=top_k,
         batch_size=batch_size,
+        progress_desc=progress_desc,
     )
     return {
         query.study_id: [prediction.prediction for prediction in predictions]
@@ -83,7 +104,13 @@ def visual_evidence_map(
     }
 
 
-def extract_visual_embeddings(model, examples, *, batch_size: int = 16):
+def extract_visual_embeddings(
+    model,
+    examples,
+    *,
+    batch_size: int = 16,
+    progress_desc: str = "visual embeddings",
+):
     deps = model_dependencies()
     torch = deps["torch"]
     DataLoader = deps["DataLoader"]
@@ -103,7 +130,7 @@ def extract_visual_embeddings(model, examples, *, batch_size: int = 16):
     model.eval()
     features = []
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader, desc=progress_desc, dynamic_ncols=True):
             patch_tokens = model.visual_extractor(batch["image"].to(model.device))
             # Retrieval must remain stable while the projection/T5 layers train.
             # The backbone is frozen, so its pooled representation is the index key.

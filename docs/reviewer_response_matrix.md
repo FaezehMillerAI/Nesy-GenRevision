@@ -56,6 +56,11 @@ The suite creates:
 | `rag_primekg_gate` | RAG candidates plus PrimeKG/LTN/gate selection |
 | `graph_constrained_balanced` | Soft graph-constrained decoding plus balanced graph/evidence selection |
 | `graph_constrained_bleu_guarded` | Evidence-heavy graph-constrained profile for stronger BLEU while retaining graph audit |
+| `adaptive_claim_audit` | Claim routing and faithful traces without editing |
+| `adaptive_claim_revision` | Proposed adaptive verification and evidence-bound revision |
+| `adaptive_claim_always_on` | Cost control for adaptive versus universal graph calls |
+| `adaptive_claim_no_ltn` | LTN contribution |
+| `adaptive_claim_no_gate` | Consistency Gate contribution |
 
 ## BLEU-1 > 0.5 Strategy
 

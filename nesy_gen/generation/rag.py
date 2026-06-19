@@ -43,6 +43,56 @@ def retrieval_candidates(
     return rows
 
 
+def select_agentic_draft(
+    example: RadiologyExample,
+    candidates: list[RagCandidate],
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Choose one draft before adaptive claim verification.
+
+    The image-conditioned generator is preferred when present. Retrieval is
+    retained as evidence and as a leakage-safe fallback, not as a test oracle.
+    """
+
+    generated = [candidate for candidate in candidates if candidate.source == "vision_t5"]
+    pool = generated or candidates
+    selected = max(
+        pool,
+        key=lambda candidate: (
+            candidate.evidence_score,
+            -candidate.source_rank,
+            len(candidate.prediction),
+        ),
+        default=RagCandidate("none", 0, "", 0.0),
+    )
+    candidate_rows = [
+        {
+            "study_id": example.study_id,
+            "reference": example.report,
+            "source": candidate.source,
+            "source_rank": candidate.source_rank,
+            "retrieved_study_id": candidate.retrieved_study_id,
+            "prediction": candidate.prediction,
+            "evidence_score": candidate.evidence_score,
+            "candidate_rank": rank,
+            "selected_as_draft": candidate is selected,
+        }
+        for rank, candidate in enumerate(candidates, start=1)
+    ]
+    return (
+        {
+            "study_id": example.study_id,
+            "prediction": selected.prediction,
+            "reference": example.report,
+            "selection_status": "agentic_draft_unverified",
+            "source": selected.source,
+            "source_rank": selected.source_rank,
+            "retrieved_study_id": selected.retrieved_study_id,
+            "evidence_score": selected.evidence_score,
+        },
+        candidate_rows,
+    )
+
+
 def select_primekg_verified_report(
     pipeline: NesyGenPipeline,
     example: RadiologyExample,

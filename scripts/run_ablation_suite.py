@@ -167,6 +167,86 @@ def build_commands(args) -> list[dict[str, object]]:
             "gate_weight": 0.10,
             "generated_evidence_score": 0.40,
         },
+        {
+            "name": "adaptive_claim_audit",
+            "purpose": (
+                "Adaptive claim routing with faithful PrimeKG/LTN traces but no report edits; "
+                "isolates explanation and routing effects."
+            ),
+            "decoding_mode": "graph_constrained",
+            "retrieval_top_k": 10,
+            "generator_num_candidates": 8 if args.generator_checkpoint_dir else 0,
+            "graph_weight": 0.45,
+            "evidence_weight": 0.45,
+            "gate_weight": 0.10,
+            "generated_evidence_score": 0.55,
+            "verification_mode": "adaptive_claim",
+            "revision_policy": "audit_only",
+            "fast_accept_threshold": 0.85,
+        },
+        {
+            "name": "adaptive_claim_revision",
+            "purpose": (
+                "Proposed method: uncertainty-triggered PrimeKG/LTN verification with "
+                "evidence-bound selective claim revision."
+            ),
+            "decoding_mode": "graph_constrained",
+            "retrieval_top_k": 10,
+            "generator_num_candidates": 8 if args.generator_checkpoint_dir else 0,
+            "graph_weight": 0.45,
+            "evidence_weight": 0.45,
+            "gate_weight": 0.10,
+            "generated_evidence_score": 0.55,
+            "verification_mode": "adaptive_claim",
+            "revision_policy": "evidence_replace",
+            "fast_accept_threshold": 0.85,
+        },
+        {
+            "name": "adaptive_claim_always_on",
+            "purpose": (
+                "Efficiency control: claim-level PrimeKG/LTN verification for every linked claim."
+            ),
+            "decoding_mode": "graph_constrained",
+            "retrieval_top_k": 10,
+            "generator_num_candidates": 8 if args.generator_checkpoint_dir else 0,
+            "graph_weight": 0.45,
+            "evidence_weight": 0.45,
+            "gate_weight": 0.10,
+            "generated_evidence_score": 0.55,
+            "verification_mode": "adaptive_claim",
+            "revision_policy": "evidence_replace",
+            "fast_accept_threshold": 1.01,
+        },
+        {
+            "name": "adaptive_claim_no_ltn",
+            "purpose": "Logic ablation: retain PrimeKG connectivity but disable LTN clause scoring.",
+            "decoding_mode": "graph_constrained",
+            "retrieval_top_k": 10,
+            "generator_num_candidates": 8 if args.generator_checkpoint_dir else 0,
+            "graph_weight": 0.45,
+            "evidence_weight": 0.45,
+            "gate_weight": 0.10,
+            "generated_evidence_score": 0.55,
+            "verification_mode": "adaptive_claim",
+            "revision_policy": "evidence_replace",
+            "fast_accept_threshold": 0.85,
+            "disable_ltn": True,
+        },
+        {
+            "name": "adaptive_claim_no_gate",
+            "purpose": "Gate ablation: retain PrimeKG/LTN scores but remove consistency-gate decisions.",
+            "decoding_mode": "graph_constrained",
+            "retrieval_top_k": 10,
+            "generator_num_candidates": 8 if args.generator_checkpoint_dir else 0,
+            "graph_weight": 0.45,
+            "evidence_weight": 0.45,
+            "gate_weight": 0.10,
+            "generated_evidence_score": 0.55,
+            "verification_mode": "adaptive_claim",
+            "revision_policy": "evidence_replace",
+            "fast_accept_threshold": 0.85,
+            "disable_gate": True,
+        },
     ]
     for variant in rag_variants:
         pred_csv = out / f"{prefix}_ablation_{variant['name']}.csv"
@@ -216,6 +296,12 @@ def build_commands(args) -> list[dict[str, object]]:
             "0.90",
             "--max-new-tokens",
             str(args.max_new_tokens),
+            "--verification-mode",
+            str(variant.get("verification_mode", "report")),
+            "--revision-policy",
+            str(variant.get("revision_policy", "audit_only")),
+            "--fast-accept-threshold",
+            str(variant.get("fast_accept_threshold", 0.85)),
         ]
         if args.generator_checkpoint_dir:
             cmd += [
@@ -224,6 +310,10 @@ def build_commands(args) -> list[dict[str, object]]:
                 "--generator-num-candidates",
                 str(variant["generator_num_candidates"]),
             ]
+        if variant.get("disable_ltn"):
+            cmd.append("--adaptive-disable-ltn")
+        if variant.get("disable_gate"):
+            cmd.append("--adaptive-disable-gate")
         cmd = _with_limit(cmd, args.limit)
         commands.append(
             {

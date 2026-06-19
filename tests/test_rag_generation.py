@@ -1,7 +1,11 @@
 import unittest
 
 from nesy_gen.data.schema import RadiologyExample
-from nesy_gen.generation.rag import RagCandidate, select_primekg_verified_report
+from nesy_gen.generation.rag import (
+    RagCandidate,
+    select_agentic_draft,
+    select_primekg_verified_report,
+)
 
 
 class _FakeScores:
@@ -84,6 +88,20 @@ class RagGenerationTest(unittest.TestCase):
         )
 
         self.assertEqual(selected["prediction"], "bad but retrieved report")
+
+    def test_agentic_draft_prefers_image_conditioned_generator(self):
+        example = RadiologyExample("s1", None, "", "reference", "test")
+        selected, audit = select_agentic_draft(
+            example,
+            [
+                RagCandidate("visual_retrieval", 1, "retrieved", 0.95, "tr1"),
+                RagCandidate("vision_t5", 1, "generated", 0.55),
+            ],
+        )
+
+        self.assertEqual(selected["prediction"], "generated")
+        self.assertEqual(selected["selection_status"], "agentic_draft_unverified")
+        self.assertEqual(sum(row["selected_as_draft"] for row in audit), 1)
 
 
 if __name__ == "__main__":

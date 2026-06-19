@@ -53,6 +53,18 @@ The advanced notebook remains available for ablations:
 notebooks/AAAI_RAG_PrimeKG_LTN_Gate_Colab.ipynb
 ```
 
+To reuse a trained checkpoint with the proposed adaptive, claim-level method:
+
+```text
+notebooks/AAAI_Adaptive_NesyGen_Colab.ipynb
+```
+
+This mode fast-accepts high-consensus claims, invokes PrimeKG/LTN only for
+uncertain claims, and records the evidence and gate decision actually used at
+inference. Selective revision is extractive and may only use a visually
+retrieved training sentence with the same linked entities and assertion
+polarity. The original report-level pipeline remains available as a baseline.
+
 ## Quick Start
 
 ```bash
@@ -87,6 +99,7 @@ MIMIC-CXR augmented experiments expect the Kaggle mirror with
 
 ```text
 nesy_gen/
+  agents/         adaptive claim routing and evidence-bound revision
   baselines/      retrieval baselines and leakage-safe query construction
   data/           dataset schemas, manifest builders, Kaggle/Drive resolvers
   generation/     RAG selection and PrimeKG-constrained decoding
@@ -111,8 +124,10 @@ For each dataset and method variant, save:
 - leakage audit;
 - official CheXbert/CheXpert and RadGraph inputs/outputs;
 - qualitative HTML examples with graph/gate decisions;
-- ablations: standard generation, RAG only, RAG + PrimeKG gate, and graph
-  constrained decoding.
+- faithful claim traces and adaptive-routing efficiency;
+- ablations: standard generation, RAG only, RAG + PrimeKG gate, graph
+  constrained decoding, adaptive audit-only, adaptive revision, and always-on
+  claim verification.
 
 See [docs/aaai_methodology.md](docs/aaai_methodology.md) for the recommended
 methodology and claim boundaries. See

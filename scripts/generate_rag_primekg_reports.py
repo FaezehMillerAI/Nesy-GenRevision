@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -12,7 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nesy_gen.data.schema import RadiologyExample, load_jsonl
 from nesy_gen.baselines.visual_retrieval import run_visual_retrieval_topk
 from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBuilder
-from nesy_gen.generation.rag import RagCandidate, retrieval_candidates, select_primekg_verified_report
+from nesy_gen.agents.adaptive_verification import AdaptiveClaimVerifier
+from nesy_gen.generation.rag import (
+    RagCandidate,
+    retrieval_candidates,
+    select_agentic_draft,
+    select_primekg_verified_report,
+)
 from nesy_gen.kg.entity_linking import LexicalEntityLinker
 from nesy_gen.kg.primekg import PrimeKGGraph
 from nesy_gen.kg.temporal import TemporalSubgraphBuilder
@@ -87,6 +94,24 @@ def main() -> None:
     parser.add_argument("--min-grounding", type=float, default=0.30)
     parser.add_argument("--max-hallucination", type=float, default=0.50)
     parser.add_argument("--min-entailment", type=float, default=0.50)
+    parser.add_argument(
+        "--verification-mode",
+        choices=["report", "adaptive_claim"],
+        default="report",
+        help="Verify all report candidates or adaptively escalate uncertain claims only.",
+    )
+    parser.add_argument("--claim-trace-jsonl")
+    parser.add_argument("--claim-audit-csv")
+    parser.add_argument("--fast-accept-threshold", type=float, default=0.85)
+    parser.add_argument("--min-supporting-reports", type=int, default=2)
+    parser.add_argument("--claim-revise-threshold", type=float, default=0.50)
+    parser.add_argument(
+        "--revision-policy",
+        choices=["audit_only", "evidence_replace"],
+        default="evidence_replace",
+    )
+    parser.add_argument("--adaptive-disable-ltn", action="store_true")
+    parser.add_argument("--adaptive-disable-gate", action="store_true")
     args = parser.parse_args()
 
     examples = load_jsonl(args.manifest)
@@ -177,17 +202,65 @@ def main() -> None:
 
     selected_rows = []
     candidate_rows = []
-    for example in tqdm(queries, desc="RAG + PrimeKG LTN gate"):
-        selected, candidates = select_primekg_verified_report(
+    trace_rows = []
+    claim_rows = []
+    adaptive_verifier = None
+    if args.verification_mode == "adaptive_claim":
+        adaptive_verifier = AdaptiveClaimVerifier(
             pipeline,
-            example,
-            candidate_map.get(example.study_id, []),
-            min_graph_score=args.min_graph_score,
-            selection_objective=args.selection_objective,
-            graph_score_weight=args.graph_score_weight,
-            evidence_weight=args.evidence_weight,
-            gate_weight=args.gate_weight,
+            fast_accept_threshold=args.fast_accept_threshold,
+            min_supporting_reports=args.min_supporting_reports,
+            revise_threshold=args.claim_revise_threshold,
+            revision_policy=args.revision_policy,
+            use_ltn=not args.adaptive_disable_ltn,
+            use_gate=not args.adaptive_disable_gate,
         )
+
+    for example in tqdm(queries, desc="Adaptive NeSy verification"):
+        study_candidates = candidate_map.get(example.study_id, [])
+        if adaptive_verifier is None:
+            selected, candidates = select_primekg_verified_report(
+                pipeline,
+                example,
+                study_candidates,
+                min_graph_score=args.min_graph_score,
+                selection_objective=args.selection_objective,
+                graph_score_weight=args.graph_score_weight,
+                evidence_weight=args.evidence_weight,
+                gate_weight=args.gate_weight,
+            )
+        else:
+            selected, candidates = select_agentic_draft(example, study_candidates)
+            raw_prediction = str(selected["prediction"])
+            visual_support = (
+                float(selected.get("evidence_score", 0.0))
+                if selected.get("source") == "visual_retrieval"
+                else 0.0
+            )
+            result = adaptive_verifier.verify(
+                raw_prediction,
+                indication=example.indication,
+                visual_support=visual_support,
+                evidence_candidates=study_candidates,
+            )
+            selected.update(
+                {
+                    "raw_prediction": raw_prediction,
+                    "prediction": result.final_report,
+                    "selection_status": "adaptive_claim_verified",
+                    "accepted_claims": result.accepted_claims,
+                    "revised_claims": result.revised_claims,
+                    "flagged_claims": result.flagged_claims,
+                    "graph_calls": result.graph_calls,
+                    "total_claims": result.total_claims,
+                    "escalation_rate": result.escalation_rate,
+                    "adaptive_latency_ms": result.latency_ms,
+                }
+            )
+            trace = {"study_id": example.study_id, **result.as_dict()}
+            trace_rows.append(trace)
+            for claim in result.claims:
+                claim_rows.append({"study_id": example.study_id, **claim.as_dict()})
         selected_rows.append(selected)
         candidate_rows.extend(candidates)
 
@@ -197,6 +270,17 @@ def main() -> None:
     candidates_csv.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(selected_rows).to_csv(output_csv, index=False)
     pd.DataFrame(candidate_rows).to_csv(candidates_csv, index=False)
+    if trace_rows:
+        trace_path = Path(args.claim_trace_jsonl or output_csv.with_name(f"{output_csv.stem}_claims.jsonl"))
+        audit_path = Path(args.claim_audit_csv or output_csv.with_name(f"{output_csv.stem}_claims.csv"))
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        with trace_path.open("w", encoding="utf-8") as handle:
+            for row in trace_rows:
+                handle.write(json.dumps(row) + "\n")
+        pd.DataFrame(claim_rows).to_csv(audit_path, index=False)
+        print(f"Saved {len(trace_rows)} faithful explanation traces to {trace_path}")
+        print(f"Saved {len(claim_rows)} claim decisions to {audit_path}")
     print(f"Saved {len(selected_rows)} final RAG+PrimeKG reports to {output_csv}")
     print(f"Saved {len(candidate_rows)} candidate audits to {candidates_csv}")
 

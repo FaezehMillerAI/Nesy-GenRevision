@@ -7,6 +7,13 @@ visual RAG index. It changes inference, not the previously trained checkpoint.
 The method treats explanation as an inference artifact rather than asking an
 LLM to rationalize a completed report.
 
+The drafting component is switchable. The checkpoint-based Vision-T5 baseline
+can be replaced by MedGemma with frozen MedSigLIP retrieval. In that profile no
+gradient training is performed in this repository. Retrieved reports are
+training-split evidence only, and the same adaptive verifier is applied. Because
+the official model cards list MIMIC-CXR among MedGemma and MedSigLIP pretraining
+sources, MIMIC experiments are not described as strict zero-shot experiments.
+
 ## Inference
 
 1. The image-conditioned generator produces report candidates.

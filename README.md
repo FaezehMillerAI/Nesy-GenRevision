@@ -59,6 +59,18 @@ To reuse a trained checkpoint with the proposed adaptive, claim-level method:
 notebooks/AAAI_Adaptive_NesyGen_Colab.ipynb
 ```
 
+For training-free MedGemma drafting with frozen MedSigLIP visual retrieval:
+
+```text
+notebooks/AAAI_Adaptive_MedGemma_Colab.ipynb
+```
+
+This notebook supports `zero_shot` and retrieval-conditioned `few_shot` modes.
+Both official Google checkpoints are gated on Hugging Face. Their terms must be
+accepted before use. Since their documented pretraining data includes
+MIMIC-CXR, MIMIC results are labelled **no task-specific fine-tuning**, not
+strict unseen-data zero-shot.
+
 This mode fast-accepts high-consensus claims, invokes PrimeKG/LTN only for
 uncertain claims, and records the evidence and gate decision actually used at
 inference. Selective revision is extractive and may only use a visually

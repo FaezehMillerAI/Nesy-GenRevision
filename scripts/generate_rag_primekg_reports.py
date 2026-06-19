@@ -20,12 +20,7 @@ from nesy_gen.generation.rag import (
     select_agentic_draft,
     select_primekg_verified_report,
 )
-from nesy_gen.kg.entity_linking import LexicalEntityLinker
-from nesy_gen.kg.primekg import PrimeKGGraph
-from nesy_gen.kg.temporal import TemporalSubgraphBuilder
-from nesy_gen.logic.ltn import NeuroSymbolicAuditor
-from nesy_gen.models.gate import ConsistencyGate
-from nesy_gen.models.nesy_gen import NesyGenPipeline
+from nesy_gen.models.pipeline_factory import build_primekg_pipeline
 from nesy_gen.models.r2gen_t5 import (
     R2GenT5Dataset,
     R2GenT5Model,
@@ -426,56 +421,6 @@ def _constraint_evidence_text(
         candidate.prediction for candidate in retrieval_candidates if candidate.evidence_score > 0.0
     )
     return " ".join(part for part in evidence_parts if part)
-
-
-def build_primekg_pipeline(
-    primekg_dir: str | Path,
-    *,
-    subgraph_strategy: str,
-    max_path_expansions: int,
-    max_neighbors_per_node: int,
-    beta_accept: float,
-    gamma_flag: float,
-    min_grounding: float,
-    max_hallucination: float,
-    min_entailment: float,
-) -> NesyGenPipeline:
-    primekg_dir = Path(primekg_dir)
-    kg = PrimeKGGraph.from_dataverse_dir(primekg_dir)
-    nodes_path = primekg_dir / "nodes.csv"
-    if nodes_path.exists():
-        nodes = pd.read_csv(nodes_path)
-        vocab = nodes[["node_id", "node_name", "node_type"]].copy()
-        vocab["alias"] = vocab["node_name"]
-    else:
-        vocab = _vocab_from_edges(kg.edges)
-    return NesyGenPipeline(
-        linker=LexicalEntityLinker(vocab),
-        subgraph_builder=TemporalSubgraphBuilder(
-            kg,
-            max_path_expansions=max_path_expansions,
-            strategy=subgraph_strategy,
-            max_neighbors_per_node=max_neighbors_per_node,
-        ),
-        auditor=NeuroSymbolicAuditor(beta_accept=beta_accept, gamma_flag=gamma_flag),
-        gate=ConsistencyGate(
-            min_grounding=min_grounding,
-            max_hallucination=max_hallucination,
-            min_entailment=min_entailment,
-        ),
-    )
-
-
-def _vocab_from_edges(edges: pd.DataFrame) -> pd.DataFrame:
-    left = edges.rename(
-        columns={"source_id": "node_id", "source_name": "node_name", "source_type": "node_type"}
-    )[["node_id", "node_name", "node_type"]]
-    right = edges.rename(
-        columns={"target_id": "node_id", "target_name": "node_name", "target_type": "node_type"}
-    )[["node_id", "node_name", "node_type"]]
-    vocab = pd.concat([left, right]).drop_duplicates()
-    vocab["alias"] = vocab["node_name"]
-    return vocab
 
 
 if __name__ == "__main__":

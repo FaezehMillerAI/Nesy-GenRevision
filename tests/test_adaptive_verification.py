@@ -83,6 +83,16 @@ class AdaptiveVerificationTest(unittest.TestCase):
         self.assertEqual(result.claims[0].decision, "accept_fast_path")
         self.assertFalse(result.claims[0].verification_triggered)
 
+    def test_medsiglip_evidence_is_used_by_adaptive_router(self):
+        verifier = AdaptiveClaimVerifier(
+            _Pipeline(), fast_accept_threshold=0.8, min_supporting_reports=1
+        )
+        evidence = [RagCandidate("medsiglip_retrieval", 1, "Opacity.", 0.9, "a")]
+
+        result = verifier.verify("Opacity.", evidence_candidates=evidence)
+
+        self.assertEqual(result.claims[0].decision, "accept_fast_path")
+
     def test_disputed_claim_can_use_evidence_bound_replacement(self):
         verifier = AdaptiveClaimVerifier(
             _Pipeline(mean=0.2, accepted=False),

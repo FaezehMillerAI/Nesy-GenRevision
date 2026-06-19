@@ -291,7 +291,7 @@ class AdaptiveClaimVerifier:
     def _prepare_evidence(self, candidates: Iterable[RagCandidate]) -> list[_EvidenceSentence]:
         evidence: list[_EvidenceSentence] = []
         for candidate in candidates:
-            if candidate.source not in {"retrieval", "visual_retrieval"}:
+            if candidate.source not in {"retrieval", "visual_retrieval", "medsiglip_retrieval"}:
                 continue
             for sentence in split_clinical_claims(candidate.prediction):
                 links = tuple(self.pipeline.linker.link_text(sentence))

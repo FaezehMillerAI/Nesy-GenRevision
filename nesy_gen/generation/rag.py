@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
 
 from nesy_gen.baselines.retrieval import run_tfidf_retrieval_topk
 from nesy_gen.data.schema import RadiologyExample
@@ -19,6 +21,36 @@ class RagCandidate:
     prediction: str
     evidence_score: float
     retrieved_study_id: str = ""
+
+
+def save_candidate_cache(
+    path: str | Path,
+    candidate_map: dict[str, list[RagCandidate]],
+    *,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 1,
+        "metadata": metadata or {},
+        "candidates": {
+            study_id: [asdict(candidate) for candidate in candidates]
+            for study_id, candidates in candidate_map.items()
+        },
+    }
+    output.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def load_candidate_cache(path: str | Path) -> tuple[dict[str, list[RagCandidate]], dict]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if payload.get("version") != 1:
+        raise ValueError("Unsupported candidate cache version.")
+    candidate_map = {
+        str(study_id): [RagCandidate(**candidate) for candidate in candidates]
+        for study_id, candidates in payload.get("candidates", {}).items()
+    }
+    return candidate_map, dict(payload.get("metadata", {}))
 
 
 def retrieval_candidates(

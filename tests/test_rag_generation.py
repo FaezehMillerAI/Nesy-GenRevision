@@ -1,8 +1,12 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from nesy_gen.data.schema import RadiologyExample
 from nesy_gen.generation.rag import (
     RagCandidate,
+    load_candidate_cache,
+    save_candidate_cache,
     select_agentic_draft,
     select_primekg_verified_report,
 )
@@ -57,6 +61,21 @@ class _FakePipeline:
 
 
 class RagGenerationTest(unittest.TestCase):
+    def test_candidate_cache_roundtrip(self):
+        candidates = {
+            "study-1": [
+                RagCandidate("visual_retrieval", 1, "normal chest", 0.91, "train-4"),
+                RagCandidate("vision_t5", 1, "no focal opacity", 0.55),
+            ]
+        }
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "candidates.json"
+            save_candidate_cache(path, candidates, metadata={"split": "test"})
+            restored, metadata = load_candidate_cache(path)
+
+        self.assertEqual(restored, candidates)
+        self.assertEqual(metadata, {"split": "test"})
+
     def test_select_primekg_verified_report(self):
         example = RadiologyExample("s1", None, "", "reference", "test")
         selected, candidates = select_primekg_verified_report(

@@ -16,7 +16,9 @@ from nesy_gen.generation.constrained_decoding import PrimeKGDecodingConstraintBu
 from nesy_gen.agents.adaptive_verification import AdaptiveClaimVerifier
 from nesy_gen.generation.rag import (
     RagCandidate,
+    load_candidate_cache,
     retrieval_candidates,
+    save_candidate_cache,
     select_agentic_draft,
     select_primekg_verified_report,
 )
@@ -107,6 +109,8 @@ def main() -> None:
     )
     parser.add_argument("--adaptive-disable-ltn", action="store_true")
     parser.add_argument("--adaptive-disable-gate", action="store_true")
+    parser.add_argument("--candidate-cache-in")
+    parser.add_argument("--candidate-cache-out")
     args = parser.parse_args()
 
     examples = load_jsonl(args.manifest)
@@ -117,70 +121,94 @@ def main() -> None:
     if not train or not queries:
         raise ValueError("Need non-empty train examples and query examples.")
 
-    generator_model = None
-    if args.generator_checkpoint_dir:
-        generator_model = R2GenT5Model.from_pretrained(args.generator_checkpoint_dir)
-        deps = require_r2gen_t5_dependencies()
-        torch = deps["torch"]
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        generator_model.to(device)
-        generator_model.eval()
-
-    print(f"Building {args.retrieval_mode} retrieval candidates...", flush=True)
-    if args.retrieval_mode == "visual":
-        if generator_model is None:
-            raise ValueError("Visual retrieval requires --generator-checkpoint-dir.")
-        retrieved = run_visual_retrieval_topk(
-            generator_model,
-            train,
-            queries,
-            top_k=args.retrieval_top_k,
-            batch_size=args.generator_batch_size,
-        )
-        candidate_map = {
-            example.study_id: [
-                RagCandidate(
-                    source="visual_retrieval",
-                    source_rank=row.rank,
-                    prediction=row.prediction,
-                    evidence_score=max(0.0, row.similarity),
-                    retrieved_study_id=row.retrieved_study_id,
-                )
-                for row in rows
-            ]
-            for example, rows in zip(queries, retrieved, strict=True)
-        }
+    if args.candidate_cache_in:
+        print(f"Reusing candidate cache: {args.candidate_cache_in}", flush=True)
+        candidate_map, cache_metadata = load_candidate_cache(args.candidate_cache_in)
+        missing = [example.study_id for example in queries if example.study_id not in candidate_map]
+        if missing:
+            raise ValueError(f"Candidate cache is missing {len(missing)} query studies.")
+        print(f"Candidate cache metadata: {cache_metadata}", flush=True)
     else:
-        candidate_map = retrieval_candidates(train, queries, top_k=args.retrieval_top_k)
+        generator_model = None
+        if args.generator_checkpoint_dir:
+            generator_model = R2GenT5Model.from_pretrained(args.generator_checkpoint_dir)
+            deps = require_r2gen_t5_dependencies()
+            torch = deps["torch"]
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            generator_model.to(device)
+            generator_model.eval()
 
-    if args.generator_checkpoint_dir and args.generator_num_candidates > 0:
-        print("Adding Vision-T5 generated candidates...", flush=True)
-        generated_map = generate_r2gen_candidates(
-            args.generator_checkpoint_dir,
-            queries,
-            batch_size=args.generator_batch_size,
-            num_candidates=args.generator_num_candidates,
-            num_beams=args.generator_num_beams,
-            do_sample=args.generator_do_sample,
-            top_p=args.generator_top_p,
-            temperature=args.generator_temperature,
-            repetition_penalty=args.generator_repetition_penalty,
-            no_repeat_ngram_size=args.generator_no_repeat_ngram_size,
-            length_penalty=args.generator_length_penalty,
-            num_beam_groups=args.generator_num_beam_groups,
-            diversity_penalty=args.generator_diversity_penalty,
-            max_new_tokens=args.max_new_tokens,
-            decoding_mode=args.decoding_mode,
-            primekg_dir=args.primekg_dir,
-            retrieval_candidate_map=candidate_map,
-            graph_token_boost=args.graph_token_boost,
-            unsupported_token_penalty=args.unsupported_token_penalty,
-            constraint_max_terms=args.constraint_max_terms,
-            generated_evidence_score=args.generated_evidence_score,
-            preloaded_model=generator_model,
-        )
-        for study_id, candidates in generated_map.items():
-            candidate_map.setdefault(study_id, []).extend(candidates)
+        print(f"Building {args.retrieval_mode} retrieval candidates...", flush=True)
+        if args.retrieval_mode == "visual":
+            if generator_model is None:
+                raise ValueError("Visual retrieval requires --generator-checkpoint-dir.")
+            retrieved = run_visual_retrieval_topk(
+                generator_model,
+                train,
+                queries,
+                top_k=args.retrieval_top_k,
+                batch_size=args.generator_batch_size,
+            )
+            candidate_map = {
+                example.study_id: [
+                    RagCandidate(
+                        source="visual_retrieval",
+                        source_rank=row.rank,
+                        prediction=row.prediction,
+                        evidence_score=max(0.0, row.similarity),
+                        retrieved_study_id=row.retrieved_study_id,
+                    )
+                    for row in rows
+                ]
+                for example, rows in zip(queries, retrieved, strict=True)
+            }
+        else:
+            candidate_map = retrieval_candidates(train, queries, top_k=args.retrieval_top_k)
+
+        if args.generator_checkpoint_dir and args.generator_num_candidates > 0:
+            print("Adding Vision-T5 generated candidates...", flush=True)
+            generated_map = generate_r2gen_candidates(
+                args.generator_checkpoint_dir,
+                queries,
+                batch_size=args.generator_batch_size,
+                num_candidates=args.generator_num_candidates,
+                num_beams=args.generator_num_beams,
+                do_sample=args.generator_do_sample,
+                top_p=args.generator_top_p,
+                temperature=args.generator_temperature,
+                repetition_penalty=args.generator_repetition_penalty,
+                no_repeat_ngram_size=args.generator_no_repeat_ngram_size,
+                length_penalty=args.generator_length_penalty,
+                num_beam_groups=args.generator_num_beam_groups,
+                diversity_penalty=args.generator_diversity_penalty,
+                max_new_tokens=args.max_new_tokens,
+                decoding_mode=args.decoding_mode,
+                primekg_dir=args.primekg_dir,
+                retrieval_candidate_map=candidate_map,
+                graph_token_boost=args.graph_token_boost,
+                unsupported_token_penalty=args.unsupported_token_penalty,
+                constraint_max_terms=args.constraint_max_terms,
+                generated_evidence_score=args.generated_evidence_score,
+                preloaded_model=generator_model,
+            )
+            for study_id, candidates in generated_map.items():
+                candidate_map.setdefault(study_id, []).extend(candidates)
+
+        if args.candidate_cache_out:
+            save_candidate_cache(
+                args.candidate_cache_out,
+                candidate_map,
+                metadata={
+                    "manifest": str(Path(args.manifest).resolve()),
+                    "split": args.split,
+                    "limit": args.limit,
+                    "retrieval_mode": args.retrieval_mode,
+                    "retrieval_top_k": args.retrieval_top_k,
+                    "decoding_mode": args.decoding_mode,
+                    "generator_num_candidates": args.generator_num_candidates,
+                },
+            )
+            print(f"Saved reusable candidate cache: {args.candidate_cache_out}", flush=True)
 
     print("Loading PrimeKG LTN verifier...", flush=True)
     pipeline = build_primekg_pipeline(

@@ -29,6 +29,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=140)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip completed artifacts and reuse shared candidate-generation caches.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Write commands without executing them.")
     args = parser.parse_args()
     if args.retrieval_mode == "visual" and not args.generator_checkpoint_dir:
@@ -46,6 +51,9 @@ def main() -> None:
         return
 
     for item in commands:
+        if args.resume and _outputs_complete(item):
+            print(f"Skipping completed ablation: {item['name']}", flush=True)
+            continue
         print("\n" + "=" * 100, flush=True)
         print(f"Running ablation: {item['name']}", flush=True)
         print("$ " + " ".join(item["cmd"]), flush=True)
@@ -141,6 +149,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "evidence_weight": 0.35,
             "gate_weight": 0.10,
             "generated_evidence_score": 0.55,
+            "cache_group": "standard_top10",
         },
         {
             "name": "graph_constrained_balanced",
@@ -152,6 +161,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "evidence_weight": 0.35,
             "gate_weight": 0.10,
             "generated_evidence_score": 0.55,
+            "cache_group": "graph_top10",
         },
         {
             "name": "graph_constrained_bleu_guarded",
@@ -166,6 +176,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "evidence_weight": 0.60,
             "gate_weight": 0.10,
             "generated_evidence_score": 0.40,
+            "cache_group": "graph_top20",
         },
         {
             "name": "adaptive_claim_audit",
@@ -183,6 +194,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "verification_mode": "adaptive_claim",
             "revision_policy": "audit_only",
             "fast_accept_threshold": 0.85,
+            "cache_group": "graph_top10",
         },
         {
             "name": "adaptive_claim_revision",
@@ -200,6 +212,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "verification_mode": "adaptive_claim",
             "revision_policy": "evidence_replace",
             "fast_accept_threshold": 0.85,
+            "cache_group": "graph_top10",
         },
         {
             "name": "adaptive_claim_always_on",
@@ -216,6 +229,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "verification_mode": "adaptive_claim",
             "revision_policy": "evidence_replace",
             "fast_accept_threshold": 1.01,
+            "cache_group": "graph_top10",
         },
         {
             "name": "adaptive_claim_no_ltn",
@@ -231,6 +245,7 @@ def build_commands(args) -> list[dict[str, object]]:
             "revision_policy": "evidence_replace",
             "fast_accept_threshold": 0.85,
             "disable_ltn": True,
+            "cache_group": "graph_top10",
         },
         {
             "name": "adaptive_claim_no_gate",
@@ -246,8 +261,10 @@ def build_commands(args) -> list[dict[str, object]]:
             "revision_policy": "evidence_replace",
             "fast_accept_threshold": 0.85,
             "disable_gate": True,
+            "cache_group": "graph_top10",
         },
     ]
+    cache_writers: set[str] = set()
     for variant in rag_variants:
         pred_csv = out / f"{prefix}_ablation_{variant['name']}.csv"
         cand_csv = out / f"{prefix}_ablation_{variant['name']}_candidates.csv"
@@ -314,6 +331,14 @@ def build_commands(args) -> list[dict[str, object]]:
             cmd.append("--adaptive-disable-ltn")
         if variant.get("disable_gate"):
             cmd.append("--adaptive-disable-gate")
+        cache_group = str(variant["cache_group"])
+        candidate_cache = out / f"{prefix}_candidate_cache_{cache_group}.json"
+        writes_cache = cache_group not in cache_writers
+        if writes_cache:
+            cache_writers.add(cache_group)
+            cmd += ["--candidate-cache-out", str(candidate_cache)]
+        else:
+            cmd += ["--candidate-cache-in", str(candidate_cache)]
         cmd = _with_limit(cmd, args.limit)
         commands.append(
             {
@@ -321,6 +346,12 @@ def build_commands(args) -> list[dict[str, object]]:
                 "purpose": variant["purpose"],
                 "prediction_csv": str(pred_csv),
                 "candidate_csv": str(cand_csv),
+                "candidate_cache": str(candidate_cache),
+                "required_outputs": [
+                    str(pred_csv),
+                    str(cand_csv),
+                    *([str(candidate_cache)] if writes_cache else []),
+                ],
                 "cmd": cmd,
             }
         )
@@ -386,6 +417,16 @@ def _with_limit(cmd: list[str], limit: int | None) -> list[str]:
     if limit is None:
         return [str(part) for part in cmd]
     return [str(part) for part in [*cmd, "--limit", limit]]
+
+
+def _outputs_complete(item: dict[str, object]) -> bool:
+    required = item.get("required_outputs")
+    if required:
+        return all(Path(str(path)).exists() for path in required)
+    for key in ("metrics_json", "prediction_csv"):
+        if item.get(key):
+            return Path(str(item[key])).exists()
+    return False
 
 
 if __name__ == "__main__":

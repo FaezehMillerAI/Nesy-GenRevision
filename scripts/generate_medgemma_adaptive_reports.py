@@ -15,6 +15,10 @@ from nesy_gen.agents.adaptive_verification import AdaptiveClaimVerifier  # noqa:
 from nesy_gen.baselines.medsiglip_retrieval import MedSiglipRetriever  # noqa: E402
 from nesy_gen.data.schema import load_jsonl  # noqa: E402
 from nesy_gen.generation.rag import RagCandidate  # noqa: E402
+from nesy_gen.models.chexagent import (  # noqa: E402
+    DEFAULT_CHEXAGENT_MODEL,
+    CheXagentDrafter,
+)
 from nesy_gen.models.medgemma import MedGemmaDrafter  # noqa: E402
 from nesy_gen.models.pipeline_factory import build_primekg_pipeline  # noqa: E402
 
@@ -37,6 +41,11 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--draft-mode", choices=["zero_shot", "few_shot"], default="few_shot")
+    parser.add_argument(
+        "--draft-backend", choices=["medgemma", "chexagent"], default="medgemma"
+    )
+    parser.add_argument("--draft-model")
+    parser.add_argument("--draft-adapter")
     parser.add_argument("--medgemma-model", default="google/medgemma-4b-it")
     parser.add_argument("--medgemma-adapter")
     parser.add_argument("--medsiglip-model", default="google/medsiglip-448")
@@ -83,8 +92,17 @@ def main() -> None:
     del retriever
     _empty_cuda_cache()
 
-    print("Loading MedGemma drafting agent...", flush=True)
-    drafter = MedGemmaDrafter(args.medgemma_model, adapter_path=args.medgemma_adapter)
+    draft_model = args.draft_model or (
+        DEFAULT_CHEXAGENT_MODEL
+        if args.draft_backend == "chexagent"
+        else args.medgemma_model
+    )
+    draft_adapter = args.draft_adapter or args.medgemma_adapter
+    print(f"Loading {args.draft_backend} drafting agent...", flush=True)
+    if args.draft_backend == "chexagent":
+        drafter = CheXagentDrafter(draft_model, adapter_path=draft_adapter)
+    else:
+        drafter = MedGemmaDrafter(draft_model, adapter_path=draft_adapter)
     print("Loading adaptive PrimeKG/LTN verifier...", flush=True)
     pipeline = build_primekg_pipeline(args.primekg_dir)
     verifier = AdaptiveClaimVerifier(
@@ -105,7 +123,7 @@ def main() -> None:
     for example, neighbours in tqdm(
         zip(queries, retrieved, strict=True),
         total=len(queries),
-        desc="MedGemma + adaptive NeSy",
+        desc=f"{args.draft_backend} + adaptive NeSy",
     ):
         _reset_peak_gpu_memory()
         rag_candidates = [
@@ -148,7 +166,7 @@ def main() -> None:
                 "prediction": result.final_report,
                 "raw_prediction": draft,
                 "reference": example.report,
-                "source": f"medgemma_{args.draft_mode}",
+                "source": f"{args.draft_backend}_{args.draft_mode}",
                 "selection_status": "adaptive_claim_verified",
                 "accepted_claims": result.accepted_claims,
                 "revised_claims": result.revised_claims,
@@ -203,14 +221,19 @@ def main() -> None:
     metadata_path.write_text(
         json.dumps(
             {
-                "method": "adaptive_nesy_gen_medgemma",
+                "method": f"adaptive_nesy_gen_{args.draft_backend}",
                 "dataset_name": args.dataset_name,
                 "evaluation_label": _evaluation_label(
-                    args.dataset_name, args.draft_mode, finetuned=bool(args.medgemma_adapter)
+                    args.dataset_name, args.draft_mode, finetuned=bool(draft_adapter)
                 ),
-                "task_specific_gradient_training": bool(args.medgemma_adapter),
-                "medgemma_model": args.medgemma_model,
-                "medgemma_adapter": args.medgemma_adapter or "",
+                "task_specific_gradient_training": bool(draft_adapter),
+                "draft_backend": args.draft_backend,
+                "draft_model": draft_model,
+                "draft_adapter": draft_adapter or "",
+                "medgemma_model": draft_model if args.draft_backend == "medgemma" else "",
+                "medgemma_adapter": (
+                    draft_adapter or "" if args.draft_backend == "medgemma" else ""
+                ),
                 "medsiglip_model": args.medsiglip_model,
                 "draft_mode": args.draft_mode,
                 "retrieval_profile": retrieval_profile,

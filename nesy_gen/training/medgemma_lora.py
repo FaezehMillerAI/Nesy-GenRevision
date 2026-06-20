@@ -7,6 +7,7 @@ import re
 from typing import Mapping, Sequence
 
 from nesy_gen.data.schema import RadiologyExample
+from nesy_gen.models.chexagent import build_chexagent_conversation
 from nesy_gen.models.medgemma import build_medgemma_messages
 
 
@@ -73,6 +74,8 @@ def build_sft_rows(
             {
                 "study_id": example.study_id,
                 "image_path": str(example.image_path),
+                "indication": example.indication,
+                "evidence_reports": evidence_reports,
                 "messages": build_medgemma_messages(
                     None,
                     indication=example.indication,
@@ -129,9 +132,86 @@ class MedGemmaSFTCollator:
         return batch
 
 
+class CheXagentSFTCollator:
+    """Mask CheXagent image/prompt tokens so loss is applied only to Findings."""
+
+    def __init__(self, tokenizer, *, max_length: int = 2048) -> None:
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __call__(self, examples: list[dict[str, object]]):
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional training dependency
+            raise ImportError("CheXagent QLoRA requires PyTorch.") from exc
+
+        rows: list[tuple[list[int], list[int]]] = []
+        for example in examples:
+            prompt = build_chexagent_conversation(
+                str(example["image_path"]),
+                tokenizer=self.tokenizer,
+                indication=str(example.get("indication", "")),
+                evidence_reports=list(example.get("evidence_reports", [])),
+            )
+            complete = build_chexagent_conversation(
+                str(example["image_path"]),
+                tokenizer=self.tokenizer,
+                indication=str(example.get("indication", "")),
+                evidence_reports=list(example.get("evidence_reports", [])),
+                target=str(example["target"]),
+            )
+            prompt_ids = _as_token_ids(
+                self.tokenizer.apply_chat_template(
+                    prompt,
+                    add_generation_prompt=True,
+                    return_tensors=None,
+                )
+            )
+            input_ids = _as_token_ids(
+                self.tokenizer.apply_chat_template(
+                    complete,
+                    add_generation_prompt=False,
+                    return_tensors=None,
+                )
+            )[: self.max_length]
+            labels = input_ids.copy()
+            labels[: min(len(prompt_ids), len(labels))] = [-100] * min(
+                len(prompt_ids), len(labels)
+            )
+            rows.append((input_ids, labels))
+
+        pad_token_id = self.tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self.tokenizer.eos_token_id
+        max_length = max(len(input_ids) for input_ids, _ in rows)
+        batch_input_ids = torch.full(
+            (len(rows), max_length), int(pad_token_id), dtype=torch.long
+        )
+        attention_mask = torch.zeros((len(rows), max_length), dtype=torch.long)
+        batch_labels = torch.full((len(rows), max_length), -100, dtype=torch.long)
+        for index, (input_ids, labels) in enumerate(rows):
+            length = len(input_ids)
+            batch_input_ids[index, :length] = torch.tensor(input_ids, dtype=torch.long)
+            attention_mask[index, :length] = 1
+            batch_labels[index, :length] = torch.tensor(labels, dtype=torch.long)
+        return {
+            "input_ids": batch_input_ids,
+            "attention_mask": attention_mask,
+            "labels": batch_labels,
+        }
+
+
 def _deterministic_probability(study_id: str, seed: int) -> float:
     digest = hashlib.sha256(f"{seed}:{study_id}".encode()).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64)
+
+
+def _as_token_ids(value) -> list[int]:
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if value and isinstance(value[0], list):
+        value = value[0]
+    return [int(token_id) for token_id in value]
 
 
 def _inject_image(messages: list[dict[str, object]], image: object) -> None:

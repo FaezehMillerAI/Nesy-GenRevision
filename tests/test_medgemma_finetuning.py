@@ -80,6 +80,7 @@ class MedGemmaFinetuningTest(unittest.TestCase):
             def __init__(self):
                 self.parameters = {
                     "base.vision_tower.encoder.lora_A": _Parameter(),
+                    "base.model.visual.encoder.lora_A": _Parameter(),
                     "base.multi_modal_projector.lora_A": _Parameter(),
                     "base.language_model.layers.0.q_proj.lora_A": _Parameter(),
                 }
@@ -90,6 +91,7 @@ class MedGemmaFinetuningTest(unittest.TestCase):
         frozen = _Model()
         _freeze_vision_encoder(frozen, train_connector=False)
         self.assertFalse(frozen.parameters["base.vision_tower.encoder.lora_A"].requires_grad)
+        self.assertFalse(frozen.parameters["base.model.visual.encoder.lora_A"].requires_grad)
         self.assertFalse(frozen.parameters["base.multi_modal_projector.lora_A"].requires_grad)
         self.assertTrue(frozen.parameters["base.language_model.layers.0.q_proj.lora_A"].requires_grad)
 

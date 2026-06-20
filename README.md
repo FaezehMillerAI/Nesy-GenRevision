@@ -108,7 +108,7 @@ thresholds, index build/load time, retrieval timing, and index size. Prediction
 rows contain generation, verification, end-to-end latency, graph calls,
 all-claim and linked-claim escalation rates, and peak allocated GPU memory.
 
-## MedGemma QLoRA Fine-tuning
+## Compact radiology QLoRA fine-tuning
 
 Use the dedicated Colab workflow for task-specific Findings adaptation:
 
@@ -116,9 +116,11 @@ Use the dedicated Colab workflow for task-specific Findings adaptation:
 notebooks/AAAI_MedGemma_QLoRA_Finetuning_Colab.ipynb
 ```
 
-It follows the official multimodal QLoRA pattern: 4-bit NF4 base weights,
-decoder LoRA adapters, bfloat16 computation, gradient checkpointing, and a
-frozen medical vision encoder. Half of the primary training examples are
+The notebook defaults to Stanford AIMI's 3B CheXagent Findings checkpoint, a
+chest-X-ray specialist with 25% fewer parameters than MedGemma 4B. Set
+`MODEL_FAMILY='medgemma'` to retain MedGemma as a controlled ablation. Both
+paths use 4-bit NF4 base weights, decoder LoRA adapters, bfloat16 computation,
+gradient checkpointing, and a frozen medical vision encoder. Half of the primary training examples are
 retrieval-conditioned by default; their evidence comes only from visually
 retrieved training studies with same-study and alternate-view exclusion.
 Training and model selection consume `train` and `val` only. The notebook keeps
@@ -131,7 +133,8 @@ python -m pip install -e ".[finetune,eval]"
 python scripts/train_medgemma_lora.py \
   --manifest <MANIFEST.jsonl> \
   --output-dir <OUTPUT_DIR>/training \
-  --model-name google/medgemma-4b-it \
+  --model-family chexagent \
+  --model-name StanfordAIMI/CheXagent-2-3b-srrg-findings \
   --train-split train \
   --eval-split val \
   --retrieval-cache <CACHE_DIR>/medsiglip_train_index.npz \
@@ -145,7 +148,9 @@ python scripts/train_medgemma_lora.py \
 Pass the resulting adapter to inference with:
 
 ```text
---medgemma-adapter <OUTPUT_DIR>/training/final_adapter
+--draft-backend chexagent \
+--draft-model StanfordAIMI/CheXagent-2-3b-srrg-findings \
+--draft-adapter <OUTPUT_DIR>/training/final_adapter
 ```
 
 ## Quick Start

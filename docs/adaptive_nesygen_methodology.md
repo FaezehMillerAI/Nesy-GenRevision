@@ -8,11 +8,13 @@ The method treats explanation as an inference artifact rather than asking an
 LLM to rationalize a completed report.
 
 The drafting component is switchable. The checkpoint-based Vision-T5 baseline
-can be replaced by MedGemma with frozen MedSigLIP retrieval. In that profile no
-gradient training is performed in this repository. Retrieved reports are
-training-split evidence only, and the same adaptive verifier is applied. Because
-the official model cards list MIMIC-CXR among MedGemma and MedSigLIP pretraining
-sources, MIMIC experiments are not described as strict zero-shot experiments.
+can be replaced by MedGemma or the smaller chest-X-ray-specific CheXagent 3B,
+with frozen MedSigLIP retrieval. Both multimodal backends support task-specific
+decoder QLoRA while their medical vision encoders remain frozen. Retrieved
+reports are training-split evidence only, and the same adaptive verifier is
+applied. Because the official model cards list MIMIC-CXR among the relevant
+pretraining or adaptation sources, MIMIC experiments are not described as
+strict zero-shot experiments.
 
 ## Inference
 

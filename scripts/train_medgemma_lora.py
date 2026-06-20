@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nesy_gen.baselines.medsiglip_retrieval import MedSiglipRetriever  # noqa: E402
 from nesy_gen.data.schema import load_jsonl  # noqa: E402
 from nesy_gen.training.medgemma_lora import (  # noqa: E402
+    CheXagentSFTCollator,
     MedGemmaSFTCollator,
     build_sft_rows,
 )
@@ -25,7 +26,7 @@ def main() -> None:
     deps = _dependencies()
     torch = deps["torch"]
     if not torch.cuda.is_available():
-        raise RuntimeError("MedGemma QLoRA requires a CUDA GPU.")
+        raise RuntimeError("Multimodal radiology QLoRA requires a CUDA GPU.")
     if not torch.cuda.is_bf16_supported():
         raise RuntimeError("Select a GPU with bfloat16 support (A100 recommended).")
 
@@ -77,15 +78,30 @@ def main() -> None:
         bnb_4bit_compute_dtype=torch.bfloat16,
         bnb_4bit_quant_storage=torch.bfloat16,
     )
-    model = deps["AutoModelForImageTextToText"].from_pretrained(
-        args.model_name,
-        attn_implementation="eager",
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-        quantization_config=quantization,
-    )
-    processor = deps["AutoProcessor"].from_pretrained(args.model_name)
-    processor.tokenizer.padding_side = "right"
+    if args.model_family == "chexagent":
+        model = deps["AutoModelForCausalLM"].from_pretrained(
+            args.model_name,
+            trust_remote_code=True,
+            attn_implementation="eager",
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            quantization_config=quantization,
+        )
+        processor = deps["AutoTokenizer"].from_pretrained(
+            args.model_name,
+            trust_remote_code=True,
+        )
+        processor.padding_side = "right"
+    else:
+        model = deps["AutoModelForImageTextToText"].from_pretrained(
+            args.model_name,
+            attn_implementation="eager",
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            quantization_config=quantization,
+        )
+        processor = deps["AutoProcessor"].from_pretrained(args.model_name)
+        processor.tokenizer.padding_side = "right"
     model.config.use_cache = False
     model = deps["prepare_model_for_kbit_training"](
         model,
@@ -93,16 +109,22 @@ def main() -> None:
     )
 
     modules_to_save = []
-    if args.train_embedding_layers:
+    if args.train_embedding_layers and args.model_family == "medgemma":
         modules_to_save.extend(["lm_head", "embed_tokens"])
-    if args.train_connector:
+    if args.train_connector and args.model_family == "medgemma":
         modules_to_save.append("multi_modal_projector")
+    target_modules = "all-linear"
+    exclude_modules = None
+    if args.model_family == "chexagent":
+        target_modules = ["q_proj", "k_proj", "v_proj", "dense", "fc1", "fc2"]
+        exclude_modules = r".*visual.*"
     peft_config = deps["LoraConfig"](
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         r=args.lora_rank,
         bias="none",
-        target_modules="all-linear",
+        target_modules=target_modules,
+        exclude_modules=exclude_modules,
         task_type="CAUSAL_LM",
         modules_to_save=modules_to_save or None,
     )
@@ -140,7 +162,11 @@ def main() -> None:
         push_to_hub=args.push_to_hub,
         hub_model_id=args.hub_model_id,
     )
-    collator = MedGemmaSFTCollator(processor, max_length=args.max_sequence_length)
+    collator = (
+        CheXagentSFTCollator(processor, max_length=args.max_sequence_length)
+        if args.model_family == "chexagent"
+        else MedGemmaSFTCollator(processor, max_length=args.max_sequence_length)
+    )
     trainer = deps["SFTTrainer"](
         model=model,
         args=training_args,
@@ -159,6 +185,7 @@ def main() -> None:
     )
     metadata = {
         "base_model": args.model_name,
+        "model_family": args.model_family,
         "adapter_dir": str(adapter_dir),
         "manifest": str(args.manifest),
         "train_split": args.train_split,
@@ -177,7 +204,7 @@ def main() -> None:
         "learning_rate": args.learning_rate,
         "epochs": args.epochs,
         "vision_encoder_frozen": True,
-        "connector_trained": args.train_connector,
+        "connector_trained": args.train_connector and args.model_family == "medgemma",
     }
     (output_dir / "training_metadata.json").write_text(
         json.dumps(metadata, indent=2), encoding="utf-8"
@@ -211,7 +238,7 @@ def _build_retrieval_evidence(args, train, evaluation):
 
 
 def _freeze_vision_encoder(model, *, train_connector: bool) -> None:
-    vision_markers = ("vision_tower", "vision_model", "vision_encoder")
+    vision_markers = ("vision_tower", "vision_model", "vision_encoder", ".visual.")
     connector_markers = ("multi_modal_projector", "mm_projector")
     for name, parameter in model.named_parameters():
         is_vision = any(marker in name for marker in vision_markers)
@@ -239,11 +266,14 @@ def _empty_cuda_cache() -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Leakage-safe multimodal QLoRA fine-tuning for MedGemma CXR Findings."
+        description="Leakage-safe multimodal QLoRA fine-tuning for radiology CXR Findings."
     )
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-name", default="google/medgemma-4b-it")
+    parser.add_argument(
+        "--model-family", choices=["medgemma", "chexagent"], default="medgemma"
+    )
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--eval-split", default="val")
     parser.add_argument("--max-train-examples", type=int)
@@ -284,7 +314,13 @@ def _dependencies():
         import torch
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoModelForImageTextToText,
+            AutoProcessor,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+        )
         from trl import SFTConfig, SFTTrainer
     except ImportError as exc:  # pragma: no cover - optional GPU training dependencies
         raise ImportError("Install training dependencies with `pip install -e .[finetune]`.") from exc
@@ -295,7 +331,9 @@ def _dependencies():
         "get_peft_model": get_peft_model,
         "prepare_model_for_kbit_training": prepare_model_for_kbit_training,
         "AutoModelForImageTextToText": AutoModelForImageTextToText,
+        "AutoModelForCausalLM": AutoModelForCausalLM,
         "AutoProcessor": AutoProcessor,
+        "AutoTokenizer": AutoTokenizer,
         "BitsAndBytesConfig": BitsAndBytesConfig,
         "SFTConfig": SFTConfig,
         "SFTTrainer": SFTTrainer,

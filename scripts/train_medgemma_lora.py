@@ -13,6 +13,7 @@ from nesy_gen.data.schema import load_jsonl  # noqa: E402
 from nesy_gen.models.chexagent import (  # noqa: E402
     DEFAULT_CHEXAGENT_MODEL,
     DEFAULT_CHEXAGENT_REVISION,
+    patch_chexagent_vision_forward,
 )
 from nesy_gen.training.medgemma_lora import (  # noqa: E402
     CheXagentSFTCollator,
@@ -98,6 +99,7 @@ def main() -> None:
             device_map="auto",
             quantization_config=quantization,
         )
+        patch_chexagent_vision_forward(model)
         processor = deps["AutoTokenizer"].from_pretrained(
             args.model_name,
             trust_remote_code=True,

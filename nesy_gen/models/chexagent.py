@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import MethodType
 from typing import Sequence
 
 
@@ -84,6 +85,7 @@ class CheXagentDrafter:
             torch_dtype=dtype,
             device_map="auto" if torch.cuda.is_available() else None,
         )
+        patch_chexagent_vision_forward(self.model)
         if adapter_path:
             self.model = deps["PeftModel"].from_pretrained(self.model, str(adapter_path))
         self.model.eval()
@@ -123,6 +125,32 @@ class CheXagentDrafter:
             output[input_ids.shape[-1] :],
             skip_special_tokens=True,
         ).strip()
+
+
+def patch_chexagent_vision_forward(model) -> None:
+    """Adapt pinned CheXagent vision features to the current SigLIP return API.
+
+    CheXagent expects ``SiglipVisionTransformer(...).hidden_states[-1]`` from
+    older Transformers. Current SigLIP drops that tuple from the public return
+    object, while its encoder still exposes the same final pre-layernorm tensor
+    as ``last_hidden_state``. Calling the encoder directly preserves the
+    checkpoint's original feature semantics.
+    """
+
+    visual = model.model.visual
+    if getattr(visual, "_nesy_gen_siglip_compat", False):
+        return
+
+    def compatible_forward(visual_self, pixel_values):
+        embeddings = visual_self.model.embeddings(pixel_values)
+        encoder_outputs = visual_self.model.encoder(inputs_embeds=embeddings)
+        features = getattr(encoder_outputs, "last_hidden_state", None)
+        if features is None:
+            features = encoder_outputs[0]
+        return visual_self.forward_resampler(features)
+
+    visual.forward = MethodType(compatible_forward, visual)
+    visual._nesy_gen_siglip_compat = True
 
 
 def _dependencies(*, include_peft: bool = False):

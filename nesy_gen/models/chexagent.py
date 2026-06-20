@@ -5,6 +5,7 @@ from typing import Sequence
 
 
 DEFAULT_CHEXAGENT_MODEL = "StanfordAIMI/CheXagent-2-3b-srrg-findings"
+DEFAULT_CHEXAGENT_REVISION = "9f7225fc382ddd1297ade1aa796da660237940bc"
 
 
 def build_chexagent_prompt(
@@ -68,13 +69,18 @@ class CheXagentDrafter:
         deps = _dependencies(include_peft=bool(adapter_path))
         torch = deps["torch"]
         dtype = torch.bfloat16 if use_bf16 and torch.cuda.is_available() else torch.float32
+        revision = (
+            DEFAULT_CHEXAGENT_REVISION if model_name == DEFAULT_CHEXAGENT_MODEL else None
+        )
         self.tokenizer = deps["AutoTokenizer"].from_pretrained(
             model_name,
             trust_remote_code=True,
+            revision=revision,
         )
         self.model = deps["AutoModelForCausalLM"].from_pretrained(
             model_name,
             trust_remote_code=True,
+            revision=revision,
             torch_dtype=dtype,
             device_map="auto" if torch.cuda.is_available() else None,
         )

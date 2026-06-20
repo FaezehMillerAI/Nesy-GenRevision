@@ -10,6 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nesy_gen.baselines.medsiglip_retrieval import MedSiglipRetriever  # noqa: E402
 from nesy_gen.data.schema import load_jsonl  # noqa: E402
+from nesy_gen.models.chexagent import (  # noqa: E402
+    DEFAULT_CHEXAGENT_MODEL,
+    DEFAULT_CHEXAGENT_REVISION,
+)
 from nesy_gen.training.medgemma_lora import (  # noqa: E402
     CheXagentSFTCollator,
     MedGemmaSFTCollator,
@@ -77,11 +81,18 @@ def main() -> None:
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16,
         bnb_4bit_quant_storage=torch.bfloat16,
+        llm_int8_skip_modules=_vision_quantization_skip_modules(args.model_family),
     )
     if args.model_family == "chexagent":
+        model_revision = (
+            DEFAULT_CHEXAGENT_REVISION
+            if args.model_name == DEFAULT_CHEXAGENT_MODEL
+            else None
+        )
         model = deps["AutoModelForCausalLM"].from_pretrained(
             args.model_name,
             trust_remote_code=True,
+            revision=model_revision,
             attn_implementation="eager",
             torch_dtype=torch.bfloat16,
             device_map="auto",
@@ -90,9 +101,11 @@ def main() -> None:
         processor = deps["AutoTokenizer"].from_pretrained(
             args.model_name,
             trust_remote_code=True,
+            revision=model_revision,
         )
         processor.padding_side = "right"
     else:
+        model_revision = None
         model = deps["AutoModelForImageTextToText"].from_pretrained(
             args.model_name,
             attn_implementation="eager",
@@ -153,6 +166,7 @@ def main() -> None:
         bf16=True,
         tf32=True,
         report_to=[] if args.report_to == "none" else [args.report_to],
+        loss_type="nll",
         gradient_checkpointing_kwargs={"use_reentrant": False},
         dataset_kwargs={"skip_prepare_dataset": True},
         remove_unused_columns=False,
@@ -186,6 +200,7 @@ def main() -> None:
     metadata = {
         "base_model": args.model_name,
         "model_family": args.model_family,
+        "model_revision": model_revision or "",
         "adapter_dir": str(adapter_dir),
         "manifest": str(args.manifest),
         "train_split": args.train_split,
@@ -245,6 +260,14 @@ def _freeze_vision_encoder(model, *, train_connector: bool) -> None:
         is_connector = any(marker in name for marker in connector_markers)
         if is_vision or (is_connector and not train_connector):
             parameter.requires_grad = False
+
+
+def _vision_quantization_skip_modules(model_family: str) -> list[str] | None:
+    # CheXagent's SigLIP pooler uses nn.MultiheadAttention.out_proj directly.
+    # Replacing that internal linear layer with Linear4bit corrupts its expected
+    # weight layout, so the frozen vision tower remains BF16 while the decoder
+    # receives NF4 QLoRA weights.
+    return ["model.visual"] if model_family == "chexagent" else None
 
 
 def _validate_split_contract(train_split: str, eval_split: str) -> None:

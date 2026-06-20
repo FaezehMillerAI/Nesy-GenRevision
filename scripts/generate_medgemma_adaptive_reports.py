@@ -17,6 +17,7 @@ from nesy_gen.data.schema import load_jsonl  # noqa: E402
 from nesy_gen.generation.rag import RagCandidate  # noqa: E402
 from nesy_gen.models.chexagent import (  # noqa: E402
     DEFAULT_CHEXAGENT_MODEL,
+    DEFAULT_CHEXAGENT_REVISION,
     CheXagentDrafter,
 )
 from nesy_gen.models.medgemma import MedGemmaDrafter  # noqa: E402
@@ -98,6 +99,11 @@ def main() -> None:
         else args.medgemma_model
     )
     draft_adapter = args.draft_adapter or args.medgemma_adapter
+    draft_revision = (
+        DEFAULT_CHEXAGENT_REVISION
+        if args.draft_backend == "chexagent" and draft_model == DEFAULT_CHEXAGENT_MODEL
+        else ""
+    )
     print(f"Loading {args.draft_backend} drafting agent...", flush=True)
     if args.draft_backend == "chexagent":
         drafter = CheXagentDrafter(draft_model, adapter_path=draft_adapter)
@@ -229,6 +235,7 @@ def main() -> None:
                 "task_specific_gradient_training": bool(draft_adapter),
                 "draft_backend": args.draft_backend,
                 "draft_model": draft_model,
+                "draft_revision": draft_revision,
                 "draft_adapter": draft_adapter or "",
                 "medgemma_model": draft_model if args.draft_backend == "medgemma" else "",
                 "medgemma_adapter": (

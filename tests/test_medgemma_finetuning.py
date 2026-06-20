@@ -3,7 +3,11 @@ import unittest
 from nesy_gen.data.schema import RadiologyExample
 from nesy_gen.training.medgemma_lora import build_sft_rows, normalize_findings_target
 from scripts.generate_medgemma_adaptive_reports import _evaluation_label
-from scripts.train_medgemma_lora import _freeze_vision_encoder, _validate_split_contract
+from scripts.train_medgemma_lora import (
+    _freeze_vision_encoder,
+    _validate_split_contract,
+    _vision_quantization_skip_modules,
+)
 
 
 class MedGemmaFinetuningTest(unittest.TestCase):
@@ -99,6 +103,10 @@ class MedGemmaFinetuningTest(unittest.TestCase):
         _freeze_vision_encoder(connector, train_connector=True)
         self.assertFalse(connector.parameters["base.vision_tower.encoder.lora_A"].requires_grad)
         self.assertTrue(connector.parameters["base.multi_modal_projector.lora_A"].requires_grad)
+
+    def test_chexagent_vision_tower_is_not_replaced_by_linear4bit(self):
+        self.assertEqual(_vision_quantization_skip_modules("chexagent"), ["model.visual"])
+        self.assertIsNone(_vision_quantization_skip_modules("medgemma"))
 
 
 if __name__ == "__main__":

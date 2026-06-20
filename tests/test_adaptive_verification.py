@@ -82,6 +82,9 @@ class AdaptiveVerificationTest(unittest.TestCase):
         self.assertEqual(result.graph_calls, 0)
         self.assertEqual(result.claims[0].decision, "accept_fast_path")
         self.assertFalse(result.claims[0].verification_triggered)
+        self.assertEqual(result.claims[0].retrieval_support_study_ids, ["a", "b"])
+        self.assertEqual(result.linked_claims, 1)
+        self.assertEqual(result.escalation_rate_linked, 0.0)
 
     def test_medsiglip_evidence_is_used_by_adaptive_router(self):
         verifier = AdaptiveClaimVerifier(
@@ -108,7 +111,34 @@ class AdaptiveVerificationTest(unittest.TestCase):
         self.assertEqual(result.graph_calls, 1)
         self.assertEqual(result.claims[0].decision, "revise")
         self.assertEqual(result.claims[0].replacement_source_study_id, "train-1")
+        self.assertEqual(result.claims[0].replacement_source_rank, 1)
+        self.assertEqual(result.claims[0].replacement_evidence_score, 0.8)
         self.assertEqual(result.final_report, "Persistent opacity.")
+
+    def test_linked_escalation_rate_excludes_abstentions(self):
+        verifier = AdaptiveClaimVerifier(_Pipeline(mean=0.2, accepted=False))
+
+        result = verifier.verify("Opacity. Unremarkable examination.")
+
+        self.assertEqual(result.total_claims, 2)
+        self.assertEqual(result.linked_claims, 1)
+        self.assertEqual(result.escalation_rate, 0.5)
+        self.assertEqual(result.escalation_rate_linked, 1.0)
+
+    def test_negated_claim_preserves_polarity_in_retrieval_contract(self):
+        verifier = AdaptiveClaimVerifier(
+            _Pipeline(), fast_accept_threshold=0.8, min_supporting_reports=2
+        )
+        evidence = [
+            RagCandidate("visual_retrieval", 1, "No opacity.", 0.9, "a"),
+            RagCandidate("visual_retrieval", 2, "No opacity.", 0.85, "b"),
+            RagCandidate("visual_retrieval", 3, "Opacity.", 0.99, "c"),
+        ]
+
+        result = verifier.verify("No opacity.", evidence_candidates=evidence)
+
+        self.assertEqual(result.claims[0].decision, "accept_fast_path")
+        self.assertEqual(result.claims[0].retrieval_support_study_ids, ["a", "b"])
 
 
 if __name__ == "__main__":

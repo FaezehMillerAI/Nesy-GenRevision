@@ -57,7 +57,10 @@ class LogicGateTest(unittest.TestCase):
         self.assertFalse(decision.accepted)
         self.assertEqual(decision.reason, "low_visual_grounding")
 
+    def test_assertion_polarity_is_validated(self):
+        with self.assertRaises(ValueError):
+            CandidateToken("opacity", "P:opacity", 0.8, 0.1, assertion_polarity="unknown")
+
 
 if __name__ == "__main__":
     unittest.main()
-

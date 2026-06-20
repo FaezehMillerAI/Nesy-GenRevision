@@ -22,7 +22,7 @@ class TemporalSubgraphBuilder:
     temporal_alpha: float = 0.6
     relation_weights: Mapping[str, float] | None = None
     max_path_expansions: int | None = 200_000
-    strategy: str = "steiner"
+    strategy: str = "hybrid"
     max_neighbors_per_node: int = 250
 
     def __post_init__(self) -> None:
@@ -30,14 +30,26 @@ class TemporalSubgraphBuilder:
             self.relation_weights = DEFAULT_RELATION_WEIGHTS
 
     def build(self, linked_entities: Sequence[LinkedEntity]) -> SimpleDiGraph:
-        terminals = [link.node_id for link in linked_entities if not link.mention.negated]
+        # Assertion polarity is consumed by retrieval matching and the gate.  The
+        # biomedical compatibility of a negated entity still needs to be audited.
+        terminals = [link.node_id for link in linked_entities]
         terminals = [node_id for node_id in dict.fromkeys(terminals) if node_id in self.primekg.graph]
         if self.strategy == "ego":
             return self._build_ego(terminals)
+        if self.strategy == "hybrid":
+            one_hop = set(self._build_ego(terminals).nodes)
+            paths = self._path_nodes(terminals)
+            return self.primekg.graph.subgraph(one_hop | paths)
         if len(terminals) <= 1:
             return self.primekg.graph.subgraph(terminals).copy()
         if self.strategy != "steiner":
-            raise ValueError("strategy must be one of: steiner, ego")
+            raise ValueError("strategy must be one of: hybrid, steiner, ego")
+
+        return self.primekg.graph.subgraph(self._path_nodes(terminals))
+
+    def _path_nodes(self, terminals: Sequence[str]) -> set[str]:
+        if len(terminals) <= 1:
+            return set(terminals)
 
         sub_nodes: set[str] = set(terminals)
         root = terminals[0]
@@ -63,7 +75,7 @@ class TemporalSubgraphBuilder:
                     continue
             sub_nodes.update(str(node) for node in path)
 
-        return self.primekg.graph.subgraph(sub_nodes)
+        return sub_nodes
 
     def _build_ego(self, terminals: Sequence[str]) -> SimpleDiGraph:
         sub_nodes: set[str] = set(terminals)

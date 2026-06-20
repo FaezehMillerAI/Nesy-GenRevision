@@ -1,5 +1,32 @@
 seed: 13
 
+models:
+  medgemma: google/medgemma-4b-it
+  medsiglip: google/medsiglip-448
+
+adaptive_verification:
+  fast_accept_threshold: 0.85
+  min_supporting_reports: 2
+  verified_accept_threshold: 0.50
+  revision_evidence_threshold: 0.50
+  revision_policy: evidence_replace
+  subgraph_strategy: hybrid
+  max_neighbors_per_node: 250
+  max_path_expansions: 200000
+
+medgemma_finetuning:
+  base_model: google/medgemma-4b-it
+  retrieval_probability: 0.5
+  retrieval_top_k: 5
+  few_shot_k: 3
+  lora_rank: 16
+  lora_alpha: 16
+  lora_dropout: 0.05
+  learning_rate: 0.0002
+  epochs: 3
+  vision_encoder_frozen: true
+  train_connector: false
+
 primekg:
   csv_path: data/primekg/kg.csv
   relation_weights:
@@ -26,4 +53,3 @@ evaluation:
   perturbation_trials: 100
   entity_drop_rates: [0.0, 0.1, 0.2, 0.3, 0.5]
   entity_swap_rates: [0.0, 0.1, 0.2]
-

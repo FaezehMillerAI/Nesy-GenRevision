@@ -12,6 +12,11 @@ class CandidateToken:
     evidence_score: float
     hallucination_score: float
     entailment_score: float = 1.0
+    assertion_polarity: str = "affirmed"
+
+    def __post_init__(self) -> None:
+        if self.assertion_polarity not in {"affirmed", "negated"}:
+            raise ValueError("assertion_polarity must be affirmed or negated")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,4 +48,3 @@ class ConsistencyGate:
             return ConsistencyDecision(token, False, "high_hallucination_score", 1 - token.hallucination_score)
         confidence = min(token.evidence_score, token.entailment_score, audit.mean_satisfaction)
         return ConsistencyDecision(token, True, "accepted", confidence)
-

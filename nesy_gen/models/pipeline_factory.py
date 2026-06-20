@@ -15,7 +15,7 @@ from nesy_gen.models.nesy_gen import NesyGenPipeline
 def build_primekg_pipeline(
     primekg_dir: str | Path,
     *,
-    subgraph_strategy: str = "ego",
+    subgraph_strategy: str = "hybrid",
     max_path_expansions: int = 200_000,
     max_neighbors_per_node: int = 250,
     beta_accept: float = 0.65,

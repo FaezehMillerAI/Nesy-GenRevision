@@ -53,10 +53,19 @@ def main() -> None:
     parser.add_argument(
         "--seed-split",
         default="train",
-        help="Manifest split allowed to contribute report-derived seed nodes.",
+        choices=["train"],
+        help="Only the training split may contribute report-derived seed nodes.",
     )
     parser.add_argument("--max-examples", type=int, help="Optional manifest examples to scan for seeds.")
-    parser.add_argument("--seed-terms-json", help="Optional JSON list of additional radiology seed terms.")
+    parser.add_argument(
+        "--include-curated-seeds",
+        action="store_true",
+        help="Ablation only: add the built-in radiology term list to training-derived seeds.",
+    )
+    parser.add_argument(
+        "--seed-terms-json",
+        help="Ablation only: JSON list of external seed terms; requires --include-curated-seeds.",
+    )
     args = parser.parse_args()
 
     primekg_dir = Path(args.primekg_dir)
@@ -83,7 +92,9 @@ def main() -> None:
     if args.max_examples is not None:
         examples = examples[: args.max_examples]
 
-    seed_terms = list(RADIOLOGY_TERMS)
+    if args.seed_terms_json and not args.include_curated_seeds:
+        parser.error("--seed-terms-json requires --include-curated-seeds")
+    seed_terms = list(RADIOLOGY_TERMS) if args.include_curated_seeds else []
     if args.seed_terms_json:
         seed_terms.extend(json.loads(Path(args.seed_terms_json).read_text(encoding="utf-8")))
 
@@ -137,6 +148,11 @@ def main() -> None:
         "source_kg_csv": str(kg_csv),
         "manifest": str(args.manifest),
         "seed_split": args.seed_split,
+        "seed_policy": (
+            "training_reports_plus_curated_ablation"
+            if args.include_curated_seeds
+            else "training_reports_only"
+        ),
         "hops": args.hops,
         "manifest_examples_scanned": len(examples),
         "seed_nodes": len(seed_nodes),

@@ -50,6 +50,7 @@ def verify_report_candidates(
                     evidence_score=float(evidence_score),
                     hallucination_score=max(0.0, 1.0 - float(scores["mean"])),
                     entailment_score=1.0,
+                    assertion_polarity="negated" if link.mention.negated else "affirmed",
                 ),
                 audit,
             )

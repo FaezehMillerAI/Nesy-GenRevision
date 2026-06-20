@@ -73,7 +73,9 @@ def main() -> None:
     parser.add_argument("--graph-token-boost", type=float, default=2.0)
     parser.add_argument("--unsupported-token-penalty", type=float, default=0.0)
     parser.add_argument("--constraint-max-terms", type=int, default=2500)
-    parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
+    parser.add_argument(
+        "--subgraph-strategy", choices=["hybrid", "steiner", "ego"], default="hybrid"
+    )
     parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
     parser.add_argument("--min-graph-score", type=float)
@@ -101,6 +103,7 @@ def main() -> None:
     parser.add_argument("--claim-audit-csv")
     parser.add_argument("--fast-accept-threshold", type=float, default=0.85)
     parser.add_argument("--min-supporting-reports", type=int, default=2)
+    parser.add_argument("--claim-accept-threshold", type=float, default=0.50)
     parser.add_argument("--claim-revise-threshold", type=float, default=0.50)
     parser.add_argument(
         "--revision-policy",
@@ -233,6 +236,7 @@ def main() -> None:
             pipeline,
             fast_accept_threshold=args.fast_accept_threshold,
             min_supporting_reports=args.min_supporting_reports,
+            accept_threshold=args.claim_accept_threshold,
             revise_threshold=args.claim_revise_threshold,
             revision_policy=args.revision_policy,
             use_ltn=not args.adaptive_disable_ltn,
@@ -255,10 +259,13 @@ def main() -> None:
         else:
             selected, candidates = select_agentic_draft(example, study_candidates)
             raw_prediction = str(selected["prediction"])
-            visual_support = (
-                float(selected.get("evidence_score", 0.0))
-                if selected.get("source") == "visual_retrieval"
-                else 0.0
+            visual_support = max(
+                (
+                    float(candidate.evidence_score)
+                    for candidate in study_candidates
+                    if candidate.source == "visual_retrieval"
+                ),
+                default=0.0,
             )
             result = adaptive_verifier.verify(
                 raw_prediction,
@@ -276,7 +283,9 @@ def main() -> None:
                     "flagged_claims": result.flagged_claims,
                     "graph_calls": result.graph_calls,
                     "total_claims": result.total_claims,
+                    "linked_claims": result.linked_claims,
                     "escalation_rate": result.escalation_rate,
+                    "escalation_rate_linked": result.escalation_rate_linked,
                     "adaptive_latency_ms": result.latency_ms,
                 }
             )

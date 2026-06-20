@@ -66,7 +66,7 @@ python scripts/run_primekg_reasoning.py \
   --dataset-name iuxray \
   --split test \
   --limit 50 \
-  --subgraph-strategy ego \
+  --subgraph-strategy hybrid \
   --latency-repeats 1
 ```
 
@@ -253,6 +253,6 @@ python scripts/run_primekg_reasoning.py \
   --dataset-name mimic \
   --split test \
   --limit 50 \
-  --subgraph-strategy ego \
+  --subgraph-strategy hybrid \
   --latency-repeats 1
 ```

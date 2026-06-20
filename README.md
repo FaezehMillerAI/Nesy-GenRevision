@@ -1,15 +1,19 @@
 # Nesy-Gen
 
-Nesy-Gen is a neuro-symbolic framework for chest X-ray report generation with
-PrimeKG-grounded reasoning. The repository is organized around one paper-grade
-pipeline:
+Adaptive NeSy-Gen is a neuro-symbolic framework for chest X-ray report generation
+with claim-level PrimeKG-grounded reasoning. The repository is organized around
+one paper-grade pipeline:
 
-1. train a frozen-vision image-to-report generator;
-2. retrieve clinically similar report evidence;
-3. link report entities to PrimeKG;
-4. verify candidates with Logic Tensor Network-style graph constraints;
-5. select the final report with a consistency gate;
-6. evaluate generation quality, graph consistency, entity linking, and official
+1. select either a trained frozen-vision generator or the official MedGemma
+   Hugging Face checkpoint without task-specific fine-tuning;
+2. retrieve visually similar training studies with a frozen image encoder;
+3. decompose the draft into claims and link clinical entities to PrimeKG;
+4. route high-consensus claims through a fast path and uncertain linked claims
+   through LTN-style graph constraints;
+5. preserve accepted claims and selectively revise only from evidence satisfying
+   the exact entity-and-polarity contract;
+6. export inference-faithful claim traces and evaluate generation quality,
+   efficiency, graph consistency, entity linking, and official
    clinical metrics.
 
 The intended AAAI framing is **explainable, graph-grounded report generation**.
@@ -59,7 +63,8 @@ To reuse a trained checkpoint with the proposed adaptive, claim-level method:
 notebooks/AAAI_Adaptive_NesyGen_Colab.ipynb
 ```
 
-For training-free MedGemma drafting with frozen MedSigLIP visual retrieval:
+For MedGemma drafting without task-specific fine-tuning and frozen MedSigLIP
+visual retrieval:
 
 ```text
 notebooks/AAAI_Adaptive_MedGemma_Colab.ipynb
@@ -76,6 +81,72 @@ uncertain claims, and records the evidence and gate decision actually used at
 inference. Selective revision is extractive and may only use a visually
 retrieved training sentence with the same linked entities and assertion
 polarity. The original report-level pipeline remains available as a baseline.
+
+The default Hugging Face models are `google/medgemma-4b-it` for image-conditioned
+Findings drafting and `google/medsiglip-448` for frozen visual retrieval. Accept
+the Health AI Developer Foundations terms for both model repositories before
+running them. These are research models and require task- and site-specific
+validation; this repository does not present their output as clinical advice.
+
+Example no-task-specific-fine-tuning run:
+
+```bash
+python scripts/generate_medgemma_adaptive_reports.py \
+  --manifest <MANIFEST.jsonl> \
+  --primekg-dir <TRAIN_SEEDED_RADIOLOGY_PRIMEKG_CACHE> \
+  --dataset-name iuxray \
+  --draft-mode few_shot \
+  --retrieval-cache <CACHE_DIR>/medsiglip_train_index.npz \
+  --output-csv <OUTPUT_DIR>/predictions.csv \
+  --candidates-csv <OUTPUT_DIR>/retrieved_candidates.csv \
+  --claim-trace-jsonl <OUTPUT_DIR>/claim_traces.jsonl \
+  --claim-audit-csv <OUTPUT_DIR>/claim_audit.csv
+```
+
+The command also writes a `.run.json` companion containing model identifiers,
+thresholds, index build/load time, retrieval timing, and index size. Prediction
+rows contain generation, verification, end-to-end latency, graph calls,
+all-claim and linked-claim escalation rates, and peak allocated GPU memory.
+
+## MedGemma QLoRA Fine-tuning
+
+Use the dedicated Colab workflow for task-specific Findings adaptation:
+
+```text
+notebooks/AAAI_MedGemma_QLoRA_Finetuning_Colab.ipynb
+```
+
+It follows the official multimodal QLoRA pattern: 4-bit NF4 base weights,
+decoder LoRA adapters, bfloat16 computation, gradient checkpointing, and a
+frozen medical vision encoder. Half of the primary training examples are
+retrieval-conditioned by default; their evidence comes only from visually
+retrieved training studies with same-study and alternate-view exclusion.
+Training and model selection consume `train` and `val` only. The notebook keeps
+the final test run behind an explicit switch.
+
+Equivalent command-line training:
+
+```bash
+python -m pip install -e ".[finetune,eval]"
+python scripts/train_medgemma_lora.py \
+  --manifest <MANIFEST.jsonl> \
+  --output-dir <OUTPUT_DIR>/training \
+  --model-name google/medgemma-4b-it \
+  --train-split train \
+  --eval-split val \
+  --retrieval-cache <CACHE_DIR>/medsiglip_train_index.npz \
+  --retrieval-probability 0.5 \
+  --lora-rank 16 \
+  --lora-alpha 16 \
+  --learning-rate 2e-4 \
+  --epochs 3
+```
+
+Pass the resulting adapter to inference with:
+
+```text
+--medgemma-adapter <OUTPUT_DIR>/training/final_adapter
+```
 
 ## Quick Start
 
@@ -118,6 +189,7 @@ nesy_gen/
   kg/             PrimeKG loading, entity linking, temporal subgraphs
   logic/          fuzzy/LTN-style constraints
   models/         Vision-T5 backbone, Nesy-Gen pipeline, consistency gate
+  training/       leakage-safe MedGemma multimodal QLoRA data and collation
   evaluation/     lexical, entity, clinical, graph, official-metric adapters
 scripts/          command-line experiment entry points
 notebooks/        Colab workflows

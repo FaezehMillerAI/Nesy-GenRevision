@@ -26,6 +26,18 @@ torch = [
   "timm>=0.9",
   "pillow>=10.0",
 ]
+finetune = [
+  "torch>=2.1",
+  "torchvision>=0.16",
+  "transformers>=4.50",
+  "accelerate>=0.30",
+  "pillow>=10.0",
+  "datasets>=2.18",
+  "peft>=0.14",
+  "trl>=0.15",
+  "bitsandbytes>=0.43",
+  "tensorboard>=2.15",
+]
 nlp = [
   "spacy>=3.7",
   "scispacy>=0.5.4",

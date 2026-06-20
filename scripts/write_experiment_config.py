@@ -58,7 +58,9 @@ def main() -> None:
     )
     parser.add_argument("--graph-token-loss-weight", type=float, default=0.0)
     parser.add_argument("--unsupported-token-loss-weight", type=float, default=0.0)
-    parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
+    parser.add_argument(
+        "--subgraph-strategy", choices=["hybrid", "steiner", "ego"], default="hybrid"
+    )
     parser.add_argument("--official-metrics", action="store_true")
     args = parser.parse_args()
 

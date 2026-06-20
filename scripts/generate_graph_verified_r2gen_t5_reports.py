@@ -45,7 +45,9 @@ def main() -> None:
     parser.add_argument("--num-candidates", type=int, default=4)
     parser.add_argument("--num-beams", type=int, default=6)
     parser.add_argument("--max-new-tokens", type=int, default=120)
-    parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="ego")
+    parser.add_argument(
+        "--subgraph-strategy", choices=["hybrid", "steiner", "ego"], default="hybrid"
+    )
     parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
     parser.add_argument("--min-graph-score", type=float)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 from pathlib import Path
 from typing import Iterable
@@ -127,4 +126,3 @@ def measure_pipeline_latency(
         warmup=warmup,
         repeats=repeats,
     )
-

@@ -32,7 +32,9 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-path-expansions", type=int, default=200_000)
-    parser.add_argument("--subgraph-strategy", choices=["steiner", "ego"], default="steiner")
+    parser.add_argument(
+        "--subgraph-strategy", choices=["hybrid", "steiner", "ego"], default="hybrid"
+    )
     parser.add_argument("--max-neighbors-per-node", type=int, default=250)
     parser.add_argument("--latency-repeats", type=int, default=1)
     parser.add_argument("--skip-latency", action="store_true")

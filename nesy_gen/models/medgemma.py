@@ -9,6 +9,7 @@ def build_medgemma_prompt(
     evidence_reports: Sequence[str] = (),
 ) -> str:
     prompt = [
+        "You are an expert chest radiologist.",
         "Write the Findings section for the current chest X-ray.",
         "Describe only findings supported by the current image.",
         "Preserve negation and laterality. Do not mention the examples or explain your reasoning.",
@@ -27,24 +28,61 @@ def build_medgemma_prompt(
     return "\n".join(prompt)
 
 
+def build_medgemma_messages(
+    image: object,
+    *,
+    indication: str = "",
+    evidence_reports: Sequence[str] = (),
+    target: str | None = None,
+) -> list[dict[str, object]]:
+    """Build the shared inference/SFT chat contract for MedGemma."""
+
+    messages: list[dict[str, object]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": build_medgemma_prompt(indication, evidence_reports)},
+            ],
+        },
+    ]
+    if target is not None:
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": " ".join(str(target).split())}],
+            },
+        )
+    return messages
+
+
 class MedGemmaDrafter:
-    """Training-free chest X-ray drafting through an official MedGemma checkpoint."""
+    """Chest X-ray drafting from a base MedGemma checkpoint and optional PEFT adapter."""
 
     def __init__(
         self,
         model_name: str = "google/medgemma-4b-it",
         *,
+        adapter_path: str | Path | None = None,
         use_bf16: bool = True,
     ) -> None:
-        deps = _dependencies()
+        deps = _dependencies(include_peft=bool(adapter_path))
         torch = deps["torch"]
         dtype = torch.bfloat16 if use_bf16 and torch.cuda.is_available() else torch.float32
-        self.processor = deps["AutoProcessor"].from_pretrained(model_name)
+        processor_source = (
+            str(adapter_path)
+            if adapter_path and (Path(adapter_path) / "preprocessor_config.json").exists()
+            else model_name
+        )
+        self.processor = deps["AutoProcessor"].from_pretrained(processor_source)
         self.model = deps["AutoModelForImageTextToText"].from_pretrained(
             model_name,
             torch_dtype=dtype,
             device_map="auto" if torch.cuda.is_available() else None,
         )
+        if adapter_path:
+            self.model = deps["PeftModel"].from_pretrained(self.model, str(adapter_path))
+        self.model.eval()
         self.torch = torch
         self.dtype = dtype
 
@@ -57,19 +95,11 @@ class MedGemmaDrafter:
         max_new_tokens: int = 180,
     ) -> str:
         image = _open_rgb(image_path)
-        messages = [
-            {
-                "role": "system",
-                "content": [{"type": "text", "text": "You are an expert chest radiologist."}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": build_medgemma_prompt(indication, evidence_reports)},
-                    {"type": "image", "image": image},
-                ],
-            },
-        ]
+        messages = build_medgemma_messages(
+            image,
+            indication=indication,
+            evidence_reports=evidence_reports,
+        )
         inputs = self.processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -99,16 +129,23 @@ def _open_rgb(path: str | Path):
         return image.convert("RGB")
 
 
-def _dependencies():
+def _dependencies(*, include_peft: bool = False):
     try:
         import torch
         from PIL import Image
         from transformers import AutoModelForImageTextToText, AutoProcessor
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise ImportError("Install dependencies with `pip install -e .[torch] accelerate`.") from exc
-    return {
+    dependencies = {
         "torch": torch,
         "Image": Image,
         "AutoProcessor": AutoProcessor,
         "AutoModelForImageTextToText": AutoModelForImageTextToText,
     }
+    if include_peft:
+        try:
+            from peft import PeftModel
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise ImportError("Adapter inference requires `pip install peft`.") from exc
+        dependencies["PeftModel"] = PeftModel
+    return dependencies

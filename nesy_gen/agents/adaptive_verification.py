@@ -25,6 +25,9 @@ class ClaimEvidenceTrace:
     visual_support: float
     retrieval_support: float
     retrieval_support_count: int
+    retrieval_support_study_ids: list[str]
+    grounding_score: float
+    primekg_score: float | None
     ltn_truth: float | None
     ltn_clause_scores: dict[str, float]
     primekg_status: str
@@ -34,6 +37,8 @@ class ClaimEvidenceTrace:
     reason: str
     verification_triggered: bool
     replacement_source_study_id: str
+    replacement_source_rank: int | None
+    replacement_evidence_score: float | None
     latency_ms: float
 
     def as_dict(self) -> dict[str, object]:
@@ -50,7 +55,9 @@ class AdaptiveVerificationResult:
     flagged_claims: int
     graph_calls: int
     total_claims: int
+    linked_claims: int
     escalation_rate: float
+    escalation_rate_linked: float
     latency_ms: float
 
     def as_dict(self) -> dict[str, object]:
@@ -62,7 +69,9 @@ class AdaptiveVerificationResult:
             "flagged_claims": self.flagged_claims,
             "graph_calls": self.graph_calls,
             "total_claims": self.total_claims,
+            "linked_claims": self.linked_claims,
             "escalation_rate": self.escalation_rate,
+            "escalation_rate_linked": self.escalation_rate_linked,
             "latency_ms": self.latency_ms,
             "claims": [claim.as_dict() for claim in self.claims],
         }
@@ -72,6 +81,7 @@ class AdaptiveVerificationResult:
 class _EvidenceSentence:
     text: str
     study_id: str
+    source_rank: int
     score: float
     links: tuple[LinkedEntity, ...]
 
@@ -90,6 +100,7 @@ class AdaptiveClaimVerifier:
         *,
         fast_accept_threshold: float = 0.85,
         min_supporting_reports: int = 2,
+        accept_threshold: float = 0.50,
         revise_threshold: float = 0.50,
         revision_policy: str = "evidence_replace",
         use_ltn: bool = True,
@@ -100,6 +111,7 @@ class AdaptiveClaimVerifier:
         self.pipeline = pipeline
         self.fast_accept_threshold = fast_accept_threshold
         self.min_supporting_reports = min_supporting_reports
+        self.accept_threshold = accept_threshold
         self.revise_threshold = revise_threshold
         self.revision_policy = revision_policy
         self.use_ltn = use_ltn
@@ -137,6 +149,7 @@ class AdaptiveClaimVerifier:
         flagged = sum(trace.decision in {"flag", "abstain"} for trace in traces)
         graph_calls = sum(trace.verification_triggered for trace in traces)
         total = len(traces)
+        linked = sum(bool(trace.linked_entities) for trace in traces)
         return AdaptiveVerificationResult(
             original_report=report,
             final_report=final_report,
@@ -146,7 +159,9 @@ class AdaptiveClaimVerifier:
             flagged_claims=flagged,
             graph_calls=graph_calls,
             total_claims=total,
+            linked_claims=linked,
             escalation_rate=graph_calls / total if total else 0.0,
+            escalation_rate_linked=graph_calls / linked if linked else 0.0,
             latency_ms=(time.perf_counter() - started) * 1000.0,
         )
 
@@ -161,7 +176,7 @@ class AdaptiveClaimVerifier:
     ) -> ClaimEvidenceTrace:
         started = time.perf_counter()
         links = self.pipeline.linker.link_text(claim)
-        retrieval_score, support_count = _retrieval_support(links, evidence)
+        retrieval_score, support_count, support_study_ids = _retrieval_support(links, evidence)
         grounding = max(_unit_score(visual_support), retrieval_score)
         entities = [_link_record(link) for link in links]
 
@@ -174,6 +189,7 @@ class AdaptiveClaimVerifier:
                 visual_support,
                 retrieval_score,
                 support_count,
+                support_study_ids,
                 decision="abstain",
                 reason="no_linked_clinical_entity",
                 started=started,
@@ -188,6 +204,7 @@ class AdaptiveClaimVerifier:
                 visual_support,
                 retrieval_score,
                 support_count,
+                support_study_ids,
                 gate_confidence=grounding,
                 decision="accept_fast_path",
                 reason="high_visual_retrieval_consensus",
@@ -207,6 +224,7 @@ class AdaptiveClaimVerifier:
                         evidence_score=grounding,
                         hallucination_score=max(0.0, 1.0 - audit.mean_satisfaction),
                         entailment_score=1.0,
+                        assertion_polarity="negated" if link.mention.negated else "affirmed",
                     ),
                     audit,
                 )
@@ -220,11 +238,16 @@ class AdaptiveClaimVerifier:
             if self.use_gate
             else sum(link.node_id in audit.valid_nodes for link in links) / len(links)
         )
-        confidence = min(grounding, audit.mean_satisfaction) if decisions else 0.0
+        confidence = (
+            min(decision.confidence for decision in decisions)
+            if decisions
+            else min(grounding, audit.mean_satisfaction)
+        )
         status = _aggregate_graph_status(links, audit)
+        primekg_score = _primekg_reachability(links, graph)
         path = _explanation_path(graph, links, graph_links)
 
-        if accepted_rate == 1.0 and confidence >= self.revise_threshold:
+        if accepted_rate == 1.0 and confidence >= self.accept_threshold:
             return self._trace(
                 claim_id,
                 claim,
@@ -233,6 +256,8 @@ class AdaptiveClaimVerifier:
                 visual_support,
                 retrieval_score,
                 support_count,
+                support_study_ids,
+                primekg_score=primekg_score,
                 ltn_truth=audit.mean_satisfaction,
                 clause_scores=scores,
                 primekg_status=status,
@@ -254,6 +279,8 @@ class AdaptiveClaimVerifier:
                 visual_support,
                 retrieval_score,
                 support_count,
+                support_study_ids,
+                primekg_score=primekg_score,
                 ltn_truth=audit.mean_satisfaction,
                 clause_scores=scores,
                 primekg_status=status,
@@ -263,6 +290,8 @@ class AdaptiveClaimVerifier:
                 reason="replaced_by_higher_support_matching_assertion",
                 verification_triggered=True,
                 replacement_source_study_id=replacement.study_id,
+                replacement_source_rank=replacement.source_rank,
+                replacement_evidence_score=replacement.score,
                 started=started,
             )
 
@@ -277,6 +306,8 @@ class AdaptiveClaimVerifier:
             visual_support,
             retrieval_score,
             support_count,
+            support_study_ids,
+            primekg_score=primekg_score,
             ltn_truth=audit.mean_satisfaction,
             clause_scores=scores,
             primekg_status=status,
@@ -300,6 +331,7 @@ class AdaptiveClaimVerifier:
                         _EvidenceSentence(
                             sentence,
                             candidate.retrieved_study_id,
+                            candidate.source_rank,
                             _unit_score(candidate.evidence_score),
                             links,
                         )
@@ -340,7 +372,9 @@ class AdaptiveClaimVerifier:
         visual_support: float,
         retrieval_support: float,
         retrieval_support_count: int,
+        retrieval_support_study_ids: list[str],
         *,
+        primekg_score: float | None = None,
         ltn_truth: float | None = None,
         clause_scores: dict[str, float] | None = None,
         primekg_status: str = "not_invoked",
@@ -350,6 +384,8 @@ class AdaptiveClaimVerifier:
         reason: str,
         verification_triggered: bool = False,
         replacement_source_study_id: str = "",
+        replacement_source_rank: int | None = None,
+        replacement_evidence_score: float | None = None,
         started: float,
     ) -> ClaimEvidenceTrace:
         return ClaimEvidenceTrace(
@@ -360,6 +396,9 @@ class AdaptiveClaimVerifier:
             visual_support=_unit_score(visual_support),
             retrieval_support=retrieval_support,
             retrieval_support_count=retrieval_support_count,
+            retrieval_support_study_ids=retrieval_support_study_ids,
+            grounding_score=max(_unit_score(visual_support), retrieval_support),
+            primekg_score=primekg_score,
             ltn_truth=ltn_truth,
             ltn_clause_scores=clause_scores or {},
             primekg_status=primekg_status,
@@ -369,6 +408,8 @@ class AdaptiveClaimVerifier:
             reason=reason,
             verification_triggered=verification_triggered,
             replacement_source_study_id=replacement_source_study_id,
+            replacement_source_rank=replacement_source_rank,
+            replacement_evidence_score=replacement_evidence_score,
             latency_ms=(time.perf_counter() - started) * 1000.0,
         )
 
@@ -379,17 +420,17 @@ def split_clinical_claims(report: str) -> list[str]:
 
 def _retrieval_support(
     links: list[LinkedEntity], evidence: list[_EvidenceSentence]
-) -> tuple[float, int]:
+) -> tuple[float, int, list[str]]:
     if not links:
-        return 0.0, 0
+        return 0.0, 0, []
     target = {(link.node_id, link.mention.negated) for link in links}
     matches = [
         sentence
         for sentence in evidence
         if target & {(link.node_id, link.mention.negated) for link in sentence.links}
     ]
-    studies = {sentence.study_id for sentence in matches if sentence.study_id}
-    return (max((sentence.score for sentence in matches), default=0.0), len(studies))
+    studies = sorted({sentence.study_id for sentence in matches if sentence.study_id})
+    return (max((sentence.score for sentence in matches), default=0.0), len(studies), studies)
 
 
 def _deduplicate_links(links: list[LinkedEntity]) -> list[LinkedEntity]:
@@ -412,6 +453,13 @@ def _aggregate_graph_status(links, audit) -> str:
     if node_ids and node_ids <= audit.valid_nodes:
         return "valid"
     return "unreachable"
+
+
+def _primekg_reachability(links, graph) -> float:
+    node_ids = {link.node_id for link in links}
+    if not node_ids:
+        return 0.0
+    return sum(node_id in graph for node_id in node_ids) / len(node_ids)
 
 
 def _connectivity_audit(graph) -> AuditReport:
@@ -443,13 +491,40 @@ def _explanation_path(graph, claim_links, all_links) -> list[dict[str, object]]:
         node_path = graph.shortest_path(source, target, directed=False, max_expansions=20_000)
     except ValueError:
         node_path = [source]
-    return [
-        {
+    records = []
+    for index, node_id in enumerate(node_path):
+        record = {
             "node_id": node_id,
             "node_name": node_lookup.get(node_id, graph.nodes[node_id].get("name", node_id)),
         }
-        for node_id in node_path
-    ]
+        if index + 1 < len(node_path):
+            record["edge_to_next"] = _edge_provenance(graph, node_id, node_path[index + 1])
+        records.append(record)
+    return records
+
+
+def _edge_provenance(graph, source: str, target: str) -> dict[str, object]:
+    for edge_source, edge_target, attrs in graph.out_edges(source, data=True):
+        if edge_target == target:
+            return {
+                "source_id": edge_source,
+                "target_id": edge_target,
+                "relation": str(attrs.get("display_relation") or attrs.get("relation") or ""),
+                "provenance": str(attrs.get("edge_source") or attrs.get("source") or "primekg"),
+                "confidence": float(attrs.get("confidence", 1.0)),
+                "direction": "forward",
+            }
+    for edge_source, edge_target, attrs in graph.in_edges(source, data=True):
+        if edge_source == target:
+            return {
+                "source_id": edge_source,
+                "target_id": edge_target,
+                "relation": str(attrs.get("display_relation") or attrs.get("relation") or ""),
+                "provenance": str(attrs.get("edge_source") or attrs.get("source") or "primekg"),
+                "confidence": float(attrs.get("confidence", 1.0)),
+                "direction": "reverse",
+            }
+    return {}
 
 
 def _link_record(link: LinkedEntity) -> dict[str, object]:
